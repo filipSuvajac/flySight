@@ -2,7 +2,16 @@ package projektni.praktikum.flysight.eBird
 
 import java.io.File
 import java.io.PrintStream
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.encodeToString
 
+@Serializable
+data class SpeciesGroup(
+    val species: String,
+    val records: List<Occurrence>
+)
+@Serializable
 data class Occurrence(
     val family: String?,
     val genus: String?,
@@ -66,4 +75,28 @@ fun main() {
     }
 
     println("\nTotal records: ${results.size}")
+
+    fun String?.jsonEscape(): String =
+        this?.replace("\"", "\\\"") ?: ""
+
+    val grouped = results
+        .groupBy { it.species ?: "unknown" }
+        .map { (species, items) ->
+            SpeciesGroup(
+                species = species,
+                records = items
+            )
+        }
+
+    val json = Json {
+        prettyPrint = true
+        ignoreUnknownKeys = true
+        encodeDefaults = true
+    }
+
+    val jsonString = json.encodeToString(grouped)
+
+    File("eBird_data.json").writeText(jsonString, Charsets.UTF_8)
+
+    println("\nJSON file created: eBird_data.json")
 }
