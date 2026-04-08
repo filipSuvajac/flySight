@@ -49,7 +49,7 @@ kotlin {
 
 compose.desktop {
     application {
-        mainClass = "projektni.praktikum.flysight.MainKt"
+        mainClass = "projektni.praktikum.flysight.eBird.MainKt"
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "projektni.praktikum.flysight"

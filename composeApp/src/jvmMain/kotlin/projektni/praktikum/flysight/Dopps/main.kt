@@ -1,4 +1,4 @@
-package projektni.praktikum.flysight
+package projektni.praktikum.flysight.Dopps
 
 import com.fleeksoft.ksoup.Ksoup
 import kotlinx.coroutines.delay
@@ -9,6 +9,7 @@ import kotlinx.serialization.json.Json
 import java.io.File
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.PrintStream
 import java.util.concurrent.TimeUnit
 
 val client = OkHttpClient.Builder()
@@ -139,7 +140,7 @@ fun saveBirdsToJson(families: List<BirdFamily>, outputFile: File) {
 }
 
 fun main() = runBlocking {
-    System.setOut(java.io.PrintStream(System.out, true, "UTF-8"))
+    System.setOut(PrintStream(System.out, true, "UTF-8"))
     val familySlugs = listOf(
         "brglezi",
         "brkate-sinice",
