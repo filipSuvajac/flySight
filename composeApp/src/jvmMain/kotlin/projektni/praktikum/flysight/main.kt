@@ -4,6 +4,9 @@ import com.fleeksoft.ksoup.Ksoup
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import java.io.File
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.TimeUnit
@@ -127,25 +130,12 @@ suspend fun scrapeFamily(slug: String): BirdFamily? {
     return BirdFamily(slug, familyName, familyLatinName, birds)
 }
 
-fun printAllData(families: List<BirdFamily>) {
-    println("\n" + "=".repeat(80))
-    println("IZPIS VSEH PODATKOV")
-    println("=".repeat(80))
-    families.forEach { family ->
-        println("\nDRUŽINA: ${family.name} (${family.latinName}) [slug: ${family.slug}]")
-        println("   Število ptic: ${family.birds.size}")
-        family.birds.forEachIndexed { idx, bird ->
-            println("   ${idx + 1}. ${bird.name} (${bird.latinName})")
-            val shortDesc = if (bird.description.length > 100) bird.description.take(100) + "…" else bird.description
-            println("      Opis: $shortDesc")
-            if (bird.imageUrl != null) {
-                println("      Slika: ${bird.imageUrl}")
-            }
-        }
-    }
-    println("\n" + "=".repeat(80))
-    println("SKUPAJ DRUŽIN: ${families.size}, SKUPAJ PTIC: ${families.sumOf { it.birds.size }}")
-    println("=".repeat(80))
+
+
+fun saveBirdsToJson(families: List<BirdFamily>, outputFile: File) {
+    val json = Json { prettyPrint = true }
+    outputFile.writeText(json.encodeToString(families), Charsets.UTF_8)
+    println("\nJSON shranjen v: ${outputFile.absolutePath}")
 }
 
 fun main() = runBlocking {
@@ -215,8 +205,8 @@ fun main() = runBlocking {
         scrapeFamily(slug).also { delay(500) }
     }
 
-    println("Skupaj pobranih ptic: ${families.sumOf { it.birds.size }}")
+    saveBirdsToJson(families, File("ptice_slovenije.json"))
 
-    printAllData(families)
+    println("Skupaj pobranih ptic: ${families.sumOf { it.birds.size }}")
 }
 
