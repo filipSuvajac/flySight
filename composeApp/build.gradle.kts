@@ -33,6 +33,7 @@ kotlin {
             implementation("com.fleeksoft.ksoup:ksoup:0.1.9")
             implementation("com.fleeksoft.ksoup:ksoup-network:0.1.9")
             implementation("com.squareup.okhttp3:okhttp:5.3.0")
+            implementation("io.github.serpro69:kotlin-faker:1.16.0")
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
@@ -49,7 +50,7 @@ kotlin {
 
 compose.desktop {
     application {
-        mainClass = "projektni.praktikum.flysight.eBird.MainKt"
+        mainClass = "projektni.praktikum.flysight.databaseGUI.MainKt"
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "projektni.praktikum.flysight"
