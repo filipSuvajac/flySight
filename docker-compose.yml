@@ -1,0 +1,33 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: flysight-postgres
+    environment:
+      POSTGRES_DB: flysight
+      POSTGRES_USER: flysight
+      POSTGRES_PASSWORD: flysight
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flysight -d flysight"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    container_name: flysight-backend
+    environment:
+      PORT: 3000
+      DATABASE_URL: postgres://flysight:flysight@postgres:5432/flysight
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
