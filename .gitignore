@@ -1,0 +1,11 @@
+.gradle/
+build/
+node_modules/
+dist/
+.env
+.DS_Store
+.idea/workspace.xml
+backend/node_modules/
+backend/dist/
+frontend/node_modules/
+frontend/dist/
