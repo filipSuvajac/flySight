@@ -2,6 +2,16 @@ import { query } from "./db.js";
 
 export async function ensureSchema() {
   await query(`
+    create table if not exists users (
+      id serial primary key,
+      email text unique not null,
+      name text not null,
+      password_hash text not null,
+      role text not null default 'user',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+
     create table if not exists bird_family (
       id serial primary key,
       name text not null,
@@ -65,7 +75,7 @@ export async function ensureSchema() {
     $$ language plpgsql;
   `);
 
-  for (const table of ["bird_family", "bird_info", "location", "observation"]) {
+  for (const table of ["users", "bird_family", "bird_info", "location", "observation"]) {
     await query(`
       drop trigger if exists ${table}_updated_at on ${table};
       create trigger ${table}_updated_at

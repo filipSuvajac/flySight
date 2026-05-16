@@ -10,6 +10,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -201,7 +202,8 @@ class FlySightRepository {
 }
 
 class FlySightApiClient(
-    private val baseUrl: String
+    private val baseUrl: String,
+    private val authToken: String = ""
 ) {
     private val client = OkHttpClient()
     private val json = Json {
@@ -211,7 +213,7 @@ class FlySightApiClient(
     private val mediaType = "application/json; charset=utf-8".toMediaType()
 
     fun healthCheck(): Result<String> = runCatching {
-        val request = Request.Builder()
+        val request = requestBuilder("/")
             .url("${baseUrl.trimEnd('/')}/")
             .get()
             .build()
@@ -222,8 +224,16 @@ class FlySightApiClient(
         }
     }
 
+    fun register(email: String, name: String, password: String): Result<String> = runCatching {
+        authRequest("/auth/register", mapOf("email" to email, "name" to name, "password" to password))
+    }
+
+    fun login(email: String, password: String): Result<String> = runCatching {
+        authRequest("/auth/login", mapOf("email" to email, "password" to password))
+    }
+
     fun fetchRows(tableName: String): Result<List<Map<String, String>>> = runCatching {
-        val request = Request.Builder()
+        val request = requestBuilder("/api/$tableName")
             .url("${baseUrl.trimEnd()}/api/$tableName")
             .get()
             .build()
@@ -248,7 +258,7 @@ class FlySightApiClient(
     }
 
     fun deleteRow(tableName: String, id: String): Result<Unit> = runCatching {
-        val request = Request.Builder()
+        val request = requestBuilder("/api/$tableName/$id")
             .url("${baseUrl.trimEnd()}/api/$tableName/$id")
             .delete()
             .build()
@@ -268,7 +278,7 @@ class FlySightApiClient(
 
     private fun requestRow(method: String, path: String, values: Map<String, String>): Map<String, String> {
         val body = json.encodeToString(values)
-        val request = Request.Builder()
+        val request = requestBuilder(path)
             .url("${baseUrl.trimEnd()}$path")
             .method(method, body.toRequestBody(mediaType))
             .build()
@@ -282,7 +292,7 @@ class FlySightApiClient(
     }
 
     private fun postJson(path: String, body: String): String {
-        val request = Request.Builder()
+        val request = requestBuilder(path)
             .url("${baseUrl.trimEnd()}$path")
             .post(body.toRequestBody(mediaType))
             .build()
@@ -291,6 +301,28 @@ class FlySightApiClient(
             if (!response.isSuccessful) error("HTTP ${response.code}: ${response.body?.string().orEmpty()}")
             return response.body?.string().orEmpty().ifBlank { "OK" }
         }
+    }
+
+    private fun authRequest(path: String, body: Map<String, String>): String {
+        val request = Request.Builder()
+            .url("${baseUrl.trimEnd()}$path")
+            .post(json.encodeToString(body).toRequestBody(mediaType))
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) error("HTTP ${response.code}: ${response.body?.string().orEmpty()}")
+            val payload = response.body?.string().orEmpty()
+            val obj = json.parseToJsonElement(payload) as? JsonObject ?: error("Invalid auth response")
+            return obj["token"]?.jsonPrimitive?.contentOrNull ?: error("Auth response did not include token")
+        }
+    }
+
+    private fun requestBuilder(path: String): Request.Builder {
+        val builder = Request.Builder()
+        if (path.startsWith("/api") && authToken.isNotBlank()) {
+            builder.header("Authorization", "Bearer $authToken")
+        }
+        return builder
     }
 
     private fun String.trimEnd(): String = trimEnd('/')
