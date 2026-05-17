@@ -88,6 +88,7 @@ export function App() {
     <Dashboard
       health={health}
       user={user}
+      token={token}
       counts={counts}
       error={error}
       onLogout={handleLogout}

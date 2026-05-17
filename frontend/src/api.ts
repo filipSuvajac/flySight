@@ -3,6 +3,13 @@ import type { AuthMode, AuthResponse, Counts, Health } from "./types";
 export const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
 export const TABLES = ["bird_family", "bird_info", "location", "observation"];
 
+export function webSocketUrl(path: string, params: Record<string, string>) {
+  const url = new URL(path, API_URL);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
+  return url.toString();
+}
+
 export async function fetchHealth(): Promise<Health> {
   const response = await fetch(`${API_URL}/health`);
   if (!response.ok) throw new Error(`Health check failed with HTTP ${response.status}`);
