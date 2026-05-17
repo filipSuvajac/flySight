@@ -77,6 +77,8 @@ fun App() {
         var screen by remember { mutableStateOf(Screen.Database) }
         var status by remember { mutableStateOf("Ready") }
         var apiBaseUrl by remember { mutableStateOf("http://localhost:3000") }
+        var authToken by remember { mutableStateOf("") }
+        var authEmail by remember { mutableStateOf("") }
 
         Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFFF7F8FA)) {
             Column(Modifier.fillMaxSize()) {
@@ -93,13 +95,19 @@ fun App() {
 
                 Box(Modifier.fillMaxSize().padding(16.dp)) {
                     when (screen) {
-                        Screen.Database -> DatabaseScreen(repository, apiBaseUrl, onStatus = { status = it })
-                        Screen.Scraper -> ScraperScreen(repository, apiBaseUrl, onStatus = { status = it })
-                        Screen.Generator -> GeneratorScreen(repository, apiBaseUrl, onStatus = { status = it })
+                        Screen.Database -> DatabaseScreen(repository, apiBaseUrl, authToken, onStatus = { status = it })
+                        Screen.Scraper -> ScraperScreen(repository, apiBaseUrl, authToken, onStatus = { status = it })
+                        Screen.Generator -> GeneratorScreen(repository, apiBaseUrl, authToken, onStatus = { status = it })
                         Screen.Service -> ServiceScreen(
                             repository = repository,
                             apiBaseUrl = apiBaseUrl,
+                            authToken = authToken,
+                            authEmail = authEmail,
                             onApiBaseUrlChange = { apiBaseUrl = it },
+                            onAuthChange = { email, token ->
+                                authEmail = email
+                                authToken = token
+                            },
                             onStatus = { status = it }
                         )
                     }
@@ -128,6 +136,7 @@ private fun Header(status: String) {
 private fun DatabaseScreen(
     repository: FlySightRepository,
     apiBaseUrl: String,
+    authToken: String,
     onStatus: (String) -> Unit
 ) {
     var selectedTable by remember { mutableStateOf(repository.tables.first()) }
@@ -137,10 +146,10 @@ private fun DatabaseScreen(
     var deleteTarget by remember { mutableStateOf<Map<String, String>?>(null) }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(apiBaseUrl) {
+    LaunchedEffect(apiBaseUrl, authToken) {
         onStatus("Loading database tables...")
         val message = withContext(Dispatchers.IO) {
-            refreshAllTables(repository, apiBaseUrl)
+            refreshAllTables(repository, apiBaseUrl, authToken)
         }
         onStatus(message)
     }
@@ -175,7 +184,7 @@ private fun DatabaseScreen(
                         scope.launch {
                             onStatus("Refreshing ${selectedTable.schema.name}...")
                             val message = withContext(Dispatchers.IO) {
-                                refreshAllTables(repository, apiBaseUrl)
+                                refreshAllTables(repository, apiBaseUrl, authToken)
                             }
                             onStatus(message)
                         }
@@ -223,14 +232,14 @@ private fun DatabaseScreen(
                     val tableName = selectedTable.schema.name
                     onStatus("Saving $tableName...")
                     val result = withContext(Dispatchers.IO) {
-                        val api = FlySightApiClient(apiBaseUrl)
+                        val api = FlySightApiClient(apiBaseUrl, authToken)
                         if (editingRow == null) {
                             api.createRow(tableName, values)
                         } else {
                             api.updateRow(tableName, editingRow?.get("id").orEmpty(), values)
                         }.fold(
                             onSuccess = {
-                                refreshAllTables(repository, apiBaseUrl)
+                                refreshAllTables(repository, apiBaseUrl, authToken)
                                 "Saved row in $tableName"
                             },
                             onFailure = { "Save failed: ${it.message}" }
@@ -255,11 +264,11 @@ private fun DatabaseScreen(
                             val tableName = selectedTable.schema.name
                             onStatus("Deleting row from $tableName...")
                             val message = withContext(Dispatchers.IO) {
-                                FlySightApiClient(apiBaseUrl)
+                                FlySightApiClient(apiBaseUrl, authToken)
                                     .deleteRow(tableName, row["id"].orEmpty())
                                     .fold(
                                         onSuccess = {
-                                            refreshAllTables(repository, apiBaseUrl)
+                                            refreshAllTables(repository, apiBaseUrl, authToken)
                                             "Deleted row from $tableName"
                                         },
                                         onFailure = { "Delete failed: ${it.message}" }
@@ -390,6 +399,7 @@ private fun DynamicFormDialog(
 private fun ScraperScreen(
     repository: FlySightRepository,
     apiBaseUrl: String,
+    authToken: String,
     onStatus: (String) -> Unit
 ) {
     val families = remember { repository.loadScrapedFamilies() }
@@ -430,9 +440,9 @@ private fun ScraperScreen(
                     scope.launch {
                         onStatus("Importing scraped DOPPS data...")
                         val message = withContext(Dispatchers.IO) {
-                            FlySightApiClient(apiBaseUrl).importDoppsFamilies(families).fold(
+                            FlySightApiClient(apiBaseUrl, authToken).importDoppsFamilies(families).fold(
                                 onSuccess = {
-                                    refreshAllTables(repository, apiBaseUrl)
+                                    refreshAllTables(repository, apiBaseUrl, authToken)
                                     "Imported scraped data: $it"
                                 },
                                 onFailure = { "Import failed: ${it.message}" }
@@ -478,6 +488,7 @@ private fun ScrapedBirdList(birds: List<Bird>) {
 private fun GeneratorScreen(
     repository: FlySightRepository,
     apiBaseUrl: String,
+    authToken: String,
     onStatus: (String) -> Unit
 ) {
     var count by remember { mutableStateOf("10") }
@@ -517,9 +528,9 @@ private fun GeneratorScreen(
                 scope.launch {
                     onStatus("Generating observations through API...")
                     val message = withContext(Dispatchers.IO) {
-                        FlySightApiClient(apiBaseUrl).generateObservations(settings).fold(
+                        FlySightApiClient(apiBaseUrl, authToken).generateObservations(settings).fold(
                             onSuccess = {
-                                refreshAllTables(repository, apiBaseUrl)
+                                refreshAllTables(repository, apiBaseUrl, authToken)
                                 "Generated observations: $it"
                             },
                             onFailure = { "Generation failed: ${it.message}" }
@@ -541,10 +552,16 @@ private fun GeneratorScreen(
 private fun ServiceScreen(
     repository: FlySightRepository,
     apiBaseUrl: String,
+    authToken: String,
+    authEmail: String,
     onApiBaseUrlChange: (String) -> Unit,
+    onAuthChange: (String, String) -> Unit,
     onStatus: (String) -> Unit
 ) {
     var response by remember { mutableStateOf("No request sent yet.") }
+    var email by remember { mutableStateOf(if (authEmail.isBlank()) "demo@flysight.test" else authEmail) }
+    var name by remember { mutableStateOf("Demo User") }
+    var password by remember { mutableStateOf("password123") }
     val scope = rememberCoroutineScope()
 
     Column(Modifier.fillMaxSize().background(Color.White).padding(16.dp)) {
@@ -554,6 +571,61 @@ private fun ServiceScreen(
             label = { Text("Web service base URL") },
             modifier = Modifier.fillMaxWidth()
         )
+
+        Spacer(Modifier.height(12.dp))
+
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Field("Email", email, { email = it }, Modifier.weight(1f))
+            Field("Name", name, { name = it }, Modifier.weight(1f))
+            Field("Password", password, { password = it }, Modifier.weight(1f))
+        }
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Button(
+                onClick = {
+                    scope.launch {
+                        onStatus("Registering user...")
+                        response = withContext(Dispatchers.IO) {
+                            FlySightApiClient(apiBaseUrl).register(email, name, password).fold(
+                                onSuccess = { token ->
+                                    onAuthChange(email, token)
+                                    "Registered and authenticated as $email"
+                                },
+                                onFailure = { "Register failed: ${it.message}" }
+                            )
+                        }
+                        onStatus(response)
+                    }
+                }
+            ) {
+                Text("Register")
+            }
+
+            Spacer(Modifier.width(8.dp))
+
+            Button(
+                onClick = {
+                    scope.launch {
+                        onStatus("Logging in...")
+                        response = withContext(Dispatchers.IO) {
+                            FlySightApiClient(apiBaseUrl).login(email, password).fold(
+                                onSuccess = { token ->
+                                    onAuthChange(email, token)
+                                    "Logged in as $email"
+                                },
+                                onFailure = { "Login failed: ${it.message}" }
+                            )
+                        }
+                        onStatus(response)
+                    }
+                }
+            ) {
+                Text("Login")
+            }
+
+            Spacer(Modifier.width(12.dp))
+            Text(if (authToken.isBlank()) "Not authenticated" else "Authenticated: $authEmail")
+        }
 
         Spacer(Modifier.height(12.dp))
 
@@ -582,7 +654,7 @@ private fun ServiceScreen(
                     scope.launch {
                         onStatus("Pushing table snapshot...")
                         response = withContext(Dispatchers.IO) {
-                            refreshAllTables(repository, apiBaseUrl)
+                            refreshAllTables(repository, apiBaseUrl, authToken)
                         }
                         onStatus(response)
                     }
@@ -599,9 +671,9 @@ private fun ServiceScreen(
                         onStatus("Pushing scraped data...")
                         val families = repository.loadScrapedFamilies()
                         response = withContext(Dispatchers.IO) {
-                            FlySightApiClient(apiBaseUrl).importDoppsFamilies(families).fold(
+                            FlySightApiClient(apiBaseUrl, authToken).importDoppsFamilies(families).fold(
                                 onSuccess = {
-                                    refreshAllTables(repository, apiBaseUrl)
+                                    refreshAllTables(repository, apiBaseUrl, authToken)
                                     "Scraped data imported: $it"
                                 },
                                 onFailure = { "Could not import scraped data: ${it.message}" }
@@ -622,8 +694,8 @@ private fun ServiceScreen(
     }
 }
 
-private fun refreshAllTables(repository: FlySightRepository, apiBaseUrl: String): String {
-    val api = FlySightApiClient(apiBaseUrl)
+private fun refreshAllTables(repository: FlySightRepository, apiBaseUrl: String, authToken: String): String {
+    val api = FlySightApiClient(apiBaseUrl, authToken)
     repository.tables.forEach { table ->
         val rows = api.fetchRows(table.schema.name).getOrElse { return "Refresh failed: ${it.message}" }
         repository.replaceRows(table.schema.name, rows)

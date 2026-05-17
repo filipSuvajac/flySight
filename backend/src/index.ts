@@ -1,6 +1,10 @@
 import cors from "cors";
 import dotenv from "dotenv";
 import express from "express";
+import bcrypt from "bcrypt";
+import rateLimit from "express-rate-limit";
+import helmet from "helmet";
+import { requireAuth, signToken } from "./auth.js";
 import { query } from "./db.js";
 import { ensureSchema } from "./schema.js";
 import { requireTable, sanitizeBody, tables } from "./tables.js";
@@ -9,15 +13,43 @@ dotenv.config();
 
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
+const corsOrigins = (process.env.CORS_ORIGIN ?? "http://localhost:5173")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
-app.use(cors());
+app.use(helmet());
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || corsOrigins.includes(origin) || isLocalDevOrigin(origin)) {
+      callback(null, true);
+      return;
+    }
+    callback(new Error("Not allowed by CORS."));
+  }
+}));
+app.use(rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: Number(process.env.RATE_LIMIT_MAX ?? 300),
+  standardHeaders: true,
+  legacyHeaders: false
+}));
 app.use(express.json({ limit: "25mb" }));
 
 app.get("/", (_req, res) => {
   res.json({
     service: "FlySight API",
     status: "ok",
-    endpoints: ["/health", "/api/tables", "/api/:table", "/api/import/dopps", "/api/generate/observations"]
+    endpoints: [
+      "/health",
+      "/auth/register",
+      "/auth/login",
+      "/auth/me",
+      "/api/tables",
+      "/api/:table",
+      "/api/import/dopps",
+      "/api/generate/observations"
+    ]
   });
 });
 
@@ -34,9 +66,71 @@ app.get("/api/tables", (_req, res) => {
   res.json(Object.values(tables).map((table) => table.table));
 });
 
-app.get("/api/:table", async (req, res, next) => {
+app.post("/auth/register", async (req, res, next) => {
   try {
-    const table = requireTable(req.params.table);
+    const email = normalizeEmail(req.body.email);
+    const name = normalizeText(req.body.name);
+    const password = String(req.body.password ?? "");
+
+    if (!email || !name || password.length < 8) {
+      res.status(400).json({ error: "Email, name and password with at least 8 characters are required." });
+      return;
+    }
+
+    const existing = await query<{ id: number }>("select id from users where email = $1", [email]);
+    if (existing.rowCount) {
+      res.status(409).json({ error: "User with this email already exists." });
+      return;
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    const result = await query<{ id: number; email: string; name: string; role: string }>(
+      "insert into users (email, name, password_hash) values ($1, $2, $3) returning id, email, name, role",
+      [email, name, passwordHash]
+    );
+    const user = result.rows[0];
+    const token = signToken(user);
+    res.status(201).json({ user, token });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/auth/login", async (req, res, next) => {
+  try {
+    const email = normalizeEmail(req.body.email);
+    const password = String(req.body.password ?? "");
+
+    if (!email || !password) {
+      res.status(400).json({ error: "Email and password are required." });
+      return;
+    }
+
+    const result = await query<{ id: number; email: string; name: string; role: string; password_hash: string }>(
+      "select id, email, name, role, password_hash from users where email = $1",
+      [email]
+    );
+    const user = result.rows[0];
+    if (!user || !(await bcrypt.compare(password, user.password_hash))) {
+      res.status(401).json({ error: "Invalid email or password." });
+      return;
+    }
+
+    const { password_hash: _passwordHash, ...publicUser } = user;
+    const token = signToken(publicUser);
+    res.json({ user: publicUser, token });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/auth/me", requireAuth, (req, res) => {
+  res.json({ user: req.user });
+});
+
+app.get("/api/:table", requireAuth, async (req, res, next) => {
+  try {
+    const table = requireTable(firstParam(req.params.table));
     const result = await query(`select * from ${table.table} order by ${table.orderBy}`);
     res.json(result.rows);
   } catch (error) {
@@ -44,9 +138,9 @@ app.get("/api/:table", async (req, res, next) => {
   }
 });
 
-app.post("/api/:table", async (req, res, next) => {
+app.post("/api/:table", requireAuth, async (req, res, next) => {
   try {
-    const table = requireTable(req.params.table);
+    const table = requireTable(firstParam(req.params.table));
     const body = sanitizeBody(req.body, table.writable);
     const keys = Object.keys(body);
     if (keys.length === 0) {
@@ -66,9 +160,9 @@ app.post("/api/:table", async (req, res, next) => {
   }
 });
 
-app.put("/api/:table/:id", async (req, res, next) => {
+app.put("/api/:table/:id", requireAuth, async (req, res, next) => {
   try {
-    const table = requireTable(req.params.table);
+    const table = requireTable(firstParam(req.params.table));
     const body = sanitizeBody(req.body, table.writable);
     const keys = Object.keys(body);
     if (keys.length === 0) {
@@ -79,7 +173,7 @@ app.put("/api/:table/:id", async (req, res, next) => {
     const setters = keys.map((key, index) => `${key} = $${index + 1}`).join(", ");
     const result = await query(
       `update ${table.table} set ${setters} where id = $${keys.length + 1} returning *`,
-      [...keys.map((key) => body[key]), req.params.id]
+      [...keys.map((key) => body[key]), firstParam(req.params.id)]
     );
     if (result.rowCount === 0) {
       res.status(404).json({ error: "Row not found." });
@@ -91,10 +185,10 @@ app.put("/api/:table/:id", async (req, res, next) => {
   }
 });
 
-app.delete("/api/:table/:id", async (req, res, next) => {
+app.delete("/api/:table/:id", requireAuth, async (req, res, next) => {
   try {
-    const table = requireTable(req.params.table);
-    const result = await query(`delete from ${table.table} where id = $1 returning id`, [req.params.id]);
+    const table = requireTable(firstParam(req.params.table));
+    const result = await query(`delete from ${table.table} where id = $1 returning id`, [firstParam(req.params.id)]);
     if (result.rowCount === 0) {
       res.status(404).json({ error: "Row not found." });
       return;
@@ -105,7 +199,7 @@ app.delete("/api/:table/:id", async (req, res, next) => {
   }
 });
 
-app.post("/api/import/dopps", async (req, res, next) => {
+app.post("/api/import/dopps", requireAuth, async (req, res, next) => {
   try {
     const families = Array.isArray(req.body) ? req.body : [];
     let importedFamilies = 0;
@@ -167,7 +261,7 @@ app.post("/api/import/dopps", async (req, res, next) => {
   }
 });
 
-app.post("/api/generate/observations", async (req, res, next) => {
+app.post("/api/generate/observations", requireAuth, async (req, res, next) => {
   try {
     const count = clampNumber(req.body.count, 0, 1000, 10);
     const minObserved = clampNumber(req.body.minObserved, 0, 100000, 1);
@@ -204,7 +298,7 @@ app.post("/api/generate/observations", async (req, res, next) => {
   }
 });
 
-app.get("/api/observations/near", async (req, res, next) => {
+app.get("/api/observations/near", requireAuth, async (req, res, next) => {
   try {
     const latitude = numberOr(req.query.lat, 46.05);
     const longitude = numberOr(req.query.lon, 14.51);
@@ -257,6 +351,22 @@ ensureSchema()
 function numberOr(value: unknown, fallback: number) {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
+}
+
+function normalizeEmail(value: unknown) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function normalizeText(value: unknown) {
+  return String(value ?? "").trim();
+}
+
+function firstParam(value: string | string[]) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function isLocalDevOrigin(origin: string) {
+  return /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin);
 }
 
 function clampNumber(value: unknown, min: number, max: number, fallback: number) {
