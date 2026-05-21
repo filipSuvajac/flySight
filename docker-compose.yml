@@ -27,8 +27,12 @@ services:
       JWT_EXPIRES_IN: 2h
       CORS_ORIGIN: http://localhost:5173
       RATE_LIMIT_MAX: 300
+      EBIRD_API_KEY: 6m0k41nel9ec
+      EBIRD_MAX_RESULTS: 500
     ports:
       - "3000:3000"
+    volumes:
+      - ./composeApp:/composeApp:ro
     depends_on:
       postgres:
         condition: service_healthy

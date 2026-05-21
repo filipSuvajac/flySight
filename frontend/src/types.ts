@@ -19,3 +19,31 @@ export type AuthResponse = {
   token: string;
 };
 
+export type EbirdObservation = {
+  id: string;
+  speciesCode: string;
+  commonName: string;
+  slovenianName: string;
+  scientificName: string;
+  locationName: string;
+  city: string;
+  observedAt: string;
+  count: number | null;
+  latitude: number | null;
+  longitude: number | null;
+  region: string;
+  valid: boolean;
+  reviewed: boolean;
+};
+
+export type EbirdHotspot = {
+  id: string;
+  name: string;
+  latitude: number | null;
+  longitude: number | null;
+  countryCode: string;
+  subnational1Code: string;
+  subnational2Code: string;
+  latestObservationDate: string;
+  speciesAllTime: number | null;
+};

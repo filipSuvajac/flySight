@@ -1,7 +1,14 @@
-import type { AuthMode, AuthResponse, Counts, Health } from "./types";
+import type { AuthMode, AuthResponse, Counts, EbirdHotspot, EbirdObservation, Health } from "./types";
 
 export const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
 export const TABLES = ["bird_family", "bird_info", "location", "observation"];
+
+export function webSocketUrl(path: string, params: Record<string, string>) {
+  const url = new URL(path, API_URL);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
+  return url.toString();
+}
 
 export async function fetchHealth(): Promise<Health> {
   const response = await fetch(`${API_URL}/health`);
@@ -41,3 +48,24 @@ export async function fetchTableCounts(token: string): Promise<Counts> {
   return nextCounts;
 }
 
+export async function fetchEbirdHotspots(token: string): Promise<EbirdHotspot[]> {
+  const response = await fetch(`${API_URL}/api/ebird/hotspots`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!response.ok) throw new Error(`eBird hotspots failed with HTTP ${response.status}`);
+  const payload = (await response.json()) as { hotspots?: EbirdHotspot[] };
+  return Array.isArray(payload.hotspots) ? payload.hotspots : [];
+}
+
+export async function fetchEbirdHotspotObservations(
+  token: string,
+  locId: string,
+  days: number
+): Promise<EbirdObservation[]> {
+  const response = await fetch(`${API_URL}/api/ebird/hotspots/${encodeURIComponent(locId)}/recent?days=${days}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!response.ok) throw new Error(`eBird hotspot observations failed with HTTP ${response.status}`);
+  const payload = (await response.json()) as { observations?: EbirdObservation[] };
+  return Array.isArray(payload.observations) ? payload.observations : [];
+}

@@ -2,9 +2,12 @@ import cors from "cors";
 import dotenv from "dotenv";
 import express from "express";
 import bcrypt from "bcrypt";
+import { readFileSync } from "node:fs";
+import type { Server } from "node:http";
 import rateLimit from "express-rate-limit";
 import helmet from "helmet";
-import { requireAuth, signToken } from "./auth.js";
+import { WebSocket, WebSocketServer } from "ws";
+import { requireAuth, signToken, verifyToken } from "./auth.js";
 import { query } from "./db.js";
 import { ensureSchema } from "./schema.js";
 import { requireTable, sanitizeBody, tables } from "./tables.js";
@@ -48,7 +51,10 @@ app.get("/", (_req, res) => {
       "/api/tables",
       "/api/:table",
       "/api/import/dopps",
-      "/api/generate/observations"
+      "/api/generate/observations",
+      "/api/ebird/recent",
+      "/api/ebird/hotspots",
+      "/ws/ebird"
     ]
   });
 });
@@ -329,6 +335,38 @@ app.get("/api/observations/near", requireAuth, async (req, res, next) => {
   }
 });
 
+app.get("/api/ebird/recent", requireAuth, async (req, res, next) => {
+  try {
+    const days = clampNumber(req.query.days, 1, 30, 30);
+    const maxResults = clampNumber(req.query.maxResults, 1, 10000, defaultEbirdMaxResults());
+    const observations = await fetchSloveniaEbirdObservations({ days, maxResults });
+    res.json({ regionCode: "SI", days, observations });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/ebird/hotspots", requireAuth, async (_req, res, next) => {
+  try {
+    const hotspots = await fetchSloveniaEbirdHotspots();
+    res.json({ regionCode: "SI", hotspots });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/ebird/hotspots/:locId/recent", requireAuth, async (req, res, next) => {
+  try {
+    const days = clampNumber(req.query.days, 1, 30, 30);
+    const maxResults = clampNumber(req.query.maxResults, 1, 10000, defaultEbirdMaxResults());
+    const locId = firstParam(req.params.locId);
+    const observations = await fetchEbirdHotspotObservations(locId, { days, maxResults });
+    res.json({ locId, days, observations });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   const statusCode = typeof error === "object" && error && "statusCode" in error
     ? Number((error as { statusCode: unknown }).statusCode)
@@ -339,14 +377,306 @@ app.use((error: unknown, _req: express.Request, res: express.Response, _next: ex
 
 ensureSchema()
   .then(() => {
-    app.listen(port, () => {
+    const server = app.listen(port, () => {
       console.log(`FlySight API running on http://localhost:${port}`);
     });
+    attachEbirdWebSocket(server);
   })
   .catch((error) => {
     console.error("Could not initialize database schema", error);
     process.exit(1);
   });
+
+type EbirdApiObservation = {
+  speciesCode?: string;
+  comName?: string;
+  sciName?: string;
+  locName?: string;
+  obsDt?: string;
+  howMany?: number;
+  lat?: number;
+  lng?: number;
+  subnational1Name?: string;
+  subnational2Name?: string;
+  obsValid?: boolean;
+  obsReviewed?: boolean;
+};
+
+type EbirdApiHotspot = {
+  locId?: string;
+  locName?: string;
+  countryCode?: string;
+  subnational1Code?: string;
+  subnational2Code?: string;
+  lat?: number;
+  lng?: number;
+  latestObsDt?: string;
+  numSpeciesAllTime?: number;
+};
+
+type EbirdObservation = {
+  id: string;
+  speciesCode: string;
+  commonName: string;
+  slovenianName: string;
+  scientificName: string;
+  locationName: string;
+  city: string;
+  observedAt: string;
+  count: number | null;
+  latitude: number | null;
+  longitude: number | null;
+  region: string;
+  valid: boolean;
+  reviewed: boolean;
+};
+
+type EbirdHotspot = {
+  id: string;
+  name: string;
+  latitude: number | null;
+  longitude: number | null;
+  countryCode: string;
+  subnational1Code: string;
+  subnational2Code: string;
+  latestObservationDate: string;
+  speciesAllTime: number | null;
+};
+
+type SlovenianBirdFamily = {
+  birds?: Array<{
+    name?: string;
+    latinName?: string;
+  }>;
+};
+
+const slovenianBirdNames = loadSlovenianBirdNames();
+
+function attachEbirdWebSocket(server: Server) {
+  const wss = new WebSocketServer({ server, path: "/ws/ebird" });
+
+  wss.on("connection", (socket, request) => {
+    const token = readTokenFromRequest(request.url);
+    if (!token) {
+      closeSocket(socket, "Missing token.");
+      return;
+    }
+
+    try {
+      verifyToken(token);
+    } catch {
+      closeSocket(socket, "Invalid or expired token.");
+      return;
+    }
+
+    void sendEbirdObservations(socket);
+
+    socket.on("message", (data) => {
+      try {
+        const message = JSON.parse(data.toString()) as { type?: string; days?: number; maxResults?: number };
+        if (message.type === "refresh") {
+          void sendEbirdObservations(socket, {
+            days: clampNumber(message.days, 1, 30, 30),
+            maxResults: clampNumber(message.maxResults, 1, 10000, defaultEbirdMaxResults())
+          });
+        }
+      } catch {
+        sendSocketJson(socket, { type: "error", error: "Unsupported WebSocket message." });
+      }
+    });
+  });
+}
+
+function readTokenFromRequest(requestUrl: string | undefined) {
+  if (!requestUrl) return "";
+  const url = new URL(requestUrl, "http://localhost");
+  return url.searchParams.get("token") ?? "";
+}
+
+function closeSocket(socket: WebSocket, reason: string) {
+  sendSocketJson(socket, { type: "error", error: reason });
+  socket.close(1008, reason);
+}
+
+type EbirdRecentOptions = {
+  days: number;
+  maxResults: number;
+};
+
+async function sendEbirdObservations(
+  socket: WebSocket,
+  options: EbirdRecentOptions = { days: 30, maxResults: defaultEbirdMaxResults() }
+) {
+  try {
+    sendSocketJson(socket, { type: "loading" });
+    const observations = await fetchSloveniaEbirdObservations(options);
+    sendSocketJson(socket, {
+      type: "observations",
+      regionCode: "SI",
+      days: options.days,
+      receivedAt: new Date().toISOString(),
+      observations
+    });
+  } catch (error) {
+    sendSocketJson(socket, {
+      type: "error",
+      error: error instanceof Error ? error.message : "Could not load eBird observations."
+    });
+  }
+}
+
+async function fetchSloveniaEbirdObservations(options: EbirdRecentOptions): Promise<EbirdObservation[]> {
+  const url = new URL("https://api.ebird.org/v2/data/obs/SI/recent");
+  url.searchParams.set("back", String(options.days));
+  url.searchParams.set("detail", "full");
+  url.searchParams.set("maxResults", String(options.maxResults));
+
+  const response = await fetch(url, {
+    headers: {
+      "X-eBirdApiToken": ebirdApiKey()
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`eBird API failed with HTTP ${response.status}.`);
+  }
+
+  const payload = (await response.json()) as EbirdApiObservation[];
+  if (!Array.isArray(payload)) return [];
+
+  return payload.map(normalizeEbirdObservation);
+}
+
+async function fetchSloveniaEbirdHotspots(): Promise<EbirdHotspot[]> {
+  const url = new URL("https://api.ebird.org/v2/ref/hotspot/SI");
+  url.searchParams.set("fmt", "json");
+
+  const response = await fetch(url, {
+    headers: {
+      "X-eBirdApiToken": ebirdApiKey()
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`eBird hotspot API failed with HTTP ${response.status}.`);
+  }
+
+  const payload = (await response.json()) as EbirdApiHotspot[];
+  if (!Array.isArray(payload)) return [];
+
+  return payload.map(normalizeEbirdHotspot);
+}
+
+async function fetchEbirdHotspotObservations(
+  locId: string,
+  options: EbirdRecentOptions
+): Promise<EbirdObservation[]> {
+  if (!locId.trim()) {
+    throw Object.assign(new Error("Hotspot location id is required."), { statusCode: 400 });
+  }
+
+  const url = new URL(`https://api.ebird.org/v2/data/obs/${encodeURIComponent(locId)}/recent`);
+  url.searchParams.set("back", String(options.days));
+  url.searchParams.set("detail", "full");
+  url.searchParams.set("maxResults", String(options.maxResults));
+
+  const response = await fetch(url, {
+    headers: {
+      "X-eBirdApiToken": ebirdApiKey()
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`eBird hotspot observations failed with HTTP ${response.status}.`);
+  }
+
+  const payload = (await response.json()) as EbirdApiObservation[];
+  if (!Array.isArray(payload)) return [];
+
+  return payload.map(normalizeEbirdObservation);
+}
+
+function normalizeEbirdObservation(observation: EbirdApiObservation): EbirdObservation {
+  const locationName = String(observation.locName ?? "");
+  const speciesCode = String(observation.speciesCode ?? "");
+  const observedAt = String(observation.obsDt ?? "");
+
+  return {
+    id: `${speciesCode}-${locationName}-${observedAt}`,
+    speciesCode,
+    commonName: String(observation.comName ?? "Unknown species"),
+    slovenianName: slovenianBirdNames.get(normalizeScientificName(observation.sciName)) ?? "",
+    scientificName: String(observation.sciName ?? ""),
+    locationName,
+    city: String(observation.subnational2Name ?? locationName),
+    observedAt,
+    count: Number.isFinite(observation.howMany) ? Number(observation.howMany) : null,
+    latitude: Number.isFinite(observation.lat) ? Number(observation.lat) : null,
+    longitude: Number.isFinite(observation.lng) ? Number(observation.lng) : null,
+    region: String(observation.subnational1Name ?? "Slovenia"),
+    valid: Boolean(observation.obsValid),
+    reviewed: Boolean(observation.obsReviewed)
+  };
+}
+
+function normalizeEbirdHotspot(hotspot: EbirdApiHotspot): EbirdHotspot {
+  return {
+    id: String(hotspot.locId ?? ""),
+    name: String(hotspot.locName ?? "Unknown hotspot"),
+    latitude: Number.isFinite(hotspot.lat) ? Number(hotspot.lat) : null,
+    longitude: Number.isFinite(hotspot.lng) ? Number(hotspot.lng) : null,
+    countryCode: String(hotspot.countryCode ?? "SI"),
+    subnational1Code: String(hotspot.subnational1Code ?? ""),
+    subnational2Code: String(hotspot.subnational2Code ?? ""),
+    latestObservationDate: String(hotspot.latestObsDt ?? ""),
+    speciesAllTime: Number.isFinite(hotspot.numSpeciesAllTime) ? Number(hotspot.numSpeciesAllTime) : null
+  };
+}
+
+function ebirdApiKey() {
+  const apiKey = process.env.EBIRD_API_KEY;
+  if (!apiKey) {
+    throw new Error("EBIRD_API_KEY is not configured on the backend.");
+  }
+  return apiKey;
+}
+
+function defaultEbirdMaxResults() {
+  return clampNumber(process.env.EBIRD_MAX_RESULTS, 1, 10000, 500);
+}
+
+function loadSlovenianBirdNames() {
+  const names = new Map<string, string>();
+
+  try {
+    const file = readFileSync(new URL("../../composeApp/ptice_slovenije.json", import.meta.url), "utf8");
+    const families = JSON.parse(file) as SlovenianBirdFamily[];
+
+    for (const family of families) {
+      for (const bird of family.birds ?? []) {
+        const latinName = normalizeScientificName(bird.latinName);
+        const slovenianName = String(bird.name ?? "").trim();
+        if (latinName && slovenianName) {
+          names.set(latinName, slovenianName);
+        }
+      }
+    }
+  } catch (error) {
+    console.warn("Could not load Slovenian bird names from ptice_slovenije.json", error);
+  }
+
+  return names;
+}
+
+function normalizeScientificName(value: unknown) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function sendSocketJson(socket: WebSocket, payload: unknown) {
+  if (socket.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify(payload));
+  }
+}
 
 function numberOr(value: unknown, fallback: number) {
   const number = Number(value);

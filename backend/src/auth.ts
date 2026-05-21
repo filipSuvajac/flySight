@@ -41,6 +41,15 @@ export function signToken(user: AuthUser) {
   );
 }
 
+export function verifyToken(token: string): AuthUser {
+  const decoded = jwt.verify(token, jwtSecret()) as JwtPayload;
+  return {
+    id: Number(decoded.sub),
+    email: decoded.email,
+    name: decoded.name
+  };
+}
+
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
   const header = req.header("authorization");
   const [scheme, token] = header?.split(" ") ?? [];
@@ -51,12 +60,7 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
   }
 
   try {
-    const decoded = jwt.verify(token, jwtSecret()) as JwtPayload;
-    req.user = {
-      id: Number(decoded.sub),
-      email: decoded.email,
-      name: decoded.name
-    };
+    req.user = verifyToken(token);
     next();
   } catch {
     res.status(401).json({ error: "Invalid or expired token." });
