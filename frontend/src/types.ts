@@ -36,3 +36,14 @@ export type EbirdObservation = {
   reviewed: boolean;
 };
 
+export type EbirdHotspot = {
+  id: string;
+  name: string;
+  latitude: number | null;
+  longitude: number | null;
+  countryCode: string;
+  subnational1Code: string;
+  subnational2Code: string;
+  latestObservationDate: string;
+  speciesAllTime: number | null;
+};

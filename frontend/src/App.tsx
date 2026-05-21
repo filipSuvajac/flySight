@@ -1,13 +1,9 @@
 import { useEffect, useState } from "react";
 import { authenticate, fetchHealth, fetchTableCounts } from "./api";
-import { AuthLanding } from "./components/AuthLanding";
-import { Dashboard } from "./components/Dashboard";
+import { AuthPage } from "./pages/AuthPage";
+import { WorkspacePage } from "./pages/WorkspacePage";
+import { clearSession, readStoredUser, storageKeys, storeSession } from "./storage";
 import type { AuthMode, Counts, Health, User } from "./types";
-
-const storage = {
-  token: "flysight_token",
-  user: "flysight_user"
-};
 
 export function App() {
   const [health, setHealth] = useState<Health | null>(null);
@@ -15,7 +11,7 @@ export function App() {
   const [error, setError] = useState("");
   const [authMessage, setAuthMessage] = useState("");
   const [authMode, setAuthMode] = useState<AuthMode>("login");
-  const [token, setToken] = useState(() => localStorage.getItem(storage.token) ?? "");
+  const [token, setToken] = useState(() => localStorage.getItem(storageKeys.token) ?? "");
   const [user, setUser] = useState<User | null>(() => readStoredUser());
   const [email, setEmail] = useState("demo@flysight.test");
   const [name, setName] = useState("Demo User");
@@ -25,6 +21,7 @@ export function App() {
     fetchHealth()
       .then(setHealth)
       .catch(() => setHealth(null));
+  
   }, []);
 
   useEffect(() => {
@@ -45,8 +42,7 @@ export function App() {
       setError("");
       setAuthMessage(mode === "login" ? "Logging in..." : "Creating profile...");
       const result = await authenticate(mode, { email, name, password });
-      localStorage.setItem(storage.token, result.token);
-      localStorage.setItem(storage.user, JSON.stringify(result.user));
+      storeSession(result.token, result.user);
       setToken(result.token);
       setUser(result.user);
       setAuthMessage("");
@@ -57,8 +53,7 @@ export function App() {
   }
 
   function handleLogout() {
-    localStorage.removeItem(storage.token);
-    localStorage.removeItem(storage.user);
+    clearSession();
     setToken("");
     setUser(null);
     setCounts({});
@@ -67,7 +62,7 @@ export function App() {
 
   if (!token) {
     return (
-      <AuthLanding
+      <AuthPage
         mode={authMode}
         email={email}
         name={name}
@@ -85,7 +80,7 @@ export function App() {
   }
 
   return (
-    <Dashboard
+    <WorkspacePage
       health={health}
       user={user}
       token={token}
@@ -95,16 +90,3 @@ export function App() {
     />
   );
 }
-
-function readStoredUser() {
-  const stored = localStorage.getItem(storage.user);
-  if (!stored) return null;
-
-  try {
-    return JSON.parse(stored) as User;
-  } catch {
-    localStorage.removeItem(storage.user);
-    return null;
-  }
-}
-
