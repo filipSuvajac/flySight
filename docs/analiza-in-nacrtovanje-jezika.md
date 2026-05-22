@@ -2,7 +2,7 @@
 
 ## Namen
 
-**CityInfra** je majhen domensko specifičen jezik za opis mestne infrastrukture. Z njim lahko v besedilni obliki zapišemo ceste, stavbe, parke, komunalne vode, postaje javnega prevoza, senzorje in druge prostorske elemente.
+**CityInfra** je domensko specifičen jezik za opis mestne infrastrukture. Z njim lahko v besedilni obliki zapišemo ceste, stavbe, parke, komunalne vode, postaje javnega prevoza, senzorje in druge prostorske elemente.
 
 Glavna ideja jezika je preprost zapis, iz katerega je mogoče zgraditi notranji model mesta, preveriti osnovna pravila in podatke po potrebi izvoziti v obliko za prikaz na zemljevidu, na primer GeoJSON.
 
@@ -251,6 +251,16 @@ set("status", "planned");
 9. `district` lahko vsebuje druge elemente, ne sme pa neposredno vsebovati novega `city`.
 10. Metapodatki služijo opisu elementov in ne vplivajo na njihovo geometrijo.
 
+## Leksikalna pravila
+
+```bnf
+IDENTIFIER = [A-Za-z][A-Za-z0-9_]*
+INTEGER = 0|[1-9][0-9]*
+NUMBER = -?(0|[1-9][0-9]*)(\.[0-9]+)?
+STRING = "([^"\\]|\\.)*"
+WHITESPACE = [ \t\r\n]+
+```
+
 ## Formalna definicija sintakse v BNF
 
 ```bnf
@@ -295,15 +305,15 @@ set("status", "planned");
 
 <zone> ::= "zone" <string> "use" <identifier> "{" <area_commands> <metadata_items> "}" ";"
 
-<path_commands> ::= <path_command>
-                  | <path_command> <path_commands>
+<path_commands> ::= <path_command> <path_commands>
+                  | <empty>
 
 <path_command> ::= <line>
                  | <bend>
                  | <polyline>
 
-<area_commands> ::= <area_command>
-                  | <area_command> <area_commands>
+<area_commands> ::= <area_command> <area_commands>
+                  | <empty>
 
 <area_command> ::= <line>
                  | <bend>
@@ -317,9 +327,9 @@ set("status", "planned");
 
 <box> ::= "box" "(" <point> "," <point> ")" ";"
 
-<polygon> ::= "polygon" "(" <point_list> ")" ";"
+<polygon> ::= "polygon" "(" <polygon_points> ")" ";"
 
-<polyline> ::= "polyline" "(" <point_list> ")" ";"
+<polyline> ::= "polyline" "(" <polyline_points> ")" ";"
 
 <circle> ::= "circle" "(" <point> "," <number> ")" ";"
 
@@ -334,10 +344,11 @@ set("status", "planned");
                    | <identifier>
                    | "nil"
 
-<point_list> ::= <point> "," <point> "," <point_tail>
+<polyline_points> ::= <point> "," <point>
+                    | <point> "," <polyline_points>
 
-<point_tail> ::= <point>
-               | <point> "," <point_tail>
+<polygon_points> ::= <point> "," <point> "," <point>
+                   | <point> "," <polygon_points>
 
 <point> ::= "(" <number> "," <number> ")"
 
@@ -388,6 +399,122 @@ set("status", "planned");
            | "V" | "W" | "X" | "Y" | "Z"
 
 <empty> ::=
+```
+
+## FIRST množice
+
+```bnf
+FIRST(<program>) = { city }
+
+FIRST(<city>) = { city }
+
+FIRST(<city_item>) = {
+  district, road, building, park, water, utility, stop, poi, sensor, zone, set
+}
+
+FIRST(<district>) = { district }
+FIRST(<road>) = { road }
+FIRST(<building>) = { building }
+FIRST(<park>) = { park }
+FIRST(<water>) = { water }
+FIRST(<utility>) = { utility }
+FIRST(<stop>) = { stop }
+FIRST(<poi>) = { poi }
+FIRST(<sensor>) = { sensor }
+FIRST(<zone>) = { zone }
+FIRST(<metadata>) = { set }
+
+FIRST(<path_command>) = { line, bend, polyline }
+FIRST(<area_command>) = { line, bend, box, polygon, circle }
+
+FIRST(<line>) = { line }
+FIRST(<bend>) = { bend }
+FIRST(<box>) = { box }
+FIRST(<polygon>) = { polygon }
+FIRST(<polyline>) = { polyline }
+FIRST(<circle>) = { circle }
+
+FIRST(<point>) = { "(" }
+FIRST(<number>) = { "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "-" }
+FIRST(<integer>) = { "0", "1", "2", "3", "4", "5", "6", "7", "8", "9" }
+FIRST(<string>) = { "\"" }
+FIRST(<identifier>) = { "A".."Z", "a".."z" }
+FIRST(<metadata_value>) = { "\"", "0".."9", "-", "A".."Z", "a".."z", "nil" }
+FIRST(<point>) = { "(" }
+FIRST(<polyline_points>) = { "(" }
+FIRST(<polygon_points>) = { "(" }
+```
+
+## FOLLOW množice
+
+```bnf
+FOLLOW(<program>) = { EOF }
+FOLLOW(<city>) = { EOF }
+
+FOLLOW(<city_items>) = { "}" }
+FOLLOW(<city_item>) = {
+  district, road, building, park, water, utility, stop, poi, sensor, zone, set, "}"
+}
+
+FOLLOW(<district>) = {
+  district, road, building, park, water, utility, stop, poi, sensor, zone, set, "}"
+}
+
+FOLLOW(<road>) = {
+  district, road, building, park, water, utility, stop, poi, sensor, zone, set, "}"
+}
+
+FOLLOW(<building>) = {
+  district, road, building, park, water, utility, stop, poi, sensor, zone, set, "}"
+}
+
+FOLLOW(<park>) = {
+  district, road, building, park, water, utility, stop, poi, sensor, zone, set, "}"
+}
+
+FOLLOW(<water>) = {
+  district, road, building, park, water, utility, stop, poi, sensor, zone, set, "}"
+}
+
+FOLLOW(<utility>) = {
+  district, road, building, park, water, utility, stop, poi, sensor, zone, set, "}"
+}
+
+FOLLOW(<stop>) = {
+  district, road, building, park, water, utility, stop, poi, sensor, zone, set, "}"
+}
+
+FOLLOW(<poi>) = {
+  district, road, building, park, water, utility, stop, poi, sensor, zone, set, "}"
+}
+
+FOLLOW(<sensor>) = {
+  district, road, building, park, water, utility, stop, poi, sensor, zone, set, "}"
+}
+
+FOLLOW(<zone>) = {
+  district, road, building, park, water, utility, stop, poi, sensor, zone, set, "}"
+}
+
+FOLLOW(<path_commands>) = { set, "}" }
+FOLLOW(<path_command>) = { line, bend, polyline, set, "}" }
+
+FOLLOW(<area_commands>) = { set, "}" }
+FOLLOW(<area_command>) = { line, bend, box, polygon, circle, set, "}" }
+
+FOLLOW(<metadata_items>) = { "}" }
+FOLLOW(<metadata>) = { set, "}" }
+
+FOLLOW(<metadata_value>) = { ")" }
+
+FOLLOW(<point>) = { ",", ")" }
+FOLLOW(<polyline_points>) = { ")" }
+FOLLOW(<polygon_points>) = { ")" }
+
+FOLLOW(<number>) = { ",", ")", ";" }
+FOLLOW(<integer>) = { ".", ",", ")", ";", "use" }
+FOLLOW(<string>) = { "{", "type", "floors", "mode", "kind", "," }
+FOLLOW(<identifier>) = { "{", ";", "speed", "material", "at", ")" }
 ```
 
 ## Testni primeri
