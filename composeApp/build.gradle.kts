@@ -58,3 +58,13 @@ compose.desktop {
         }
     }
 }
+tasks.register<JavaExec>("cityInfraDemo") {
+    group = "application"
+    description = "Runs the CityInfra DSL parser and prints GeoJSON."
+    mainClass.set("projektni.praktikum.flysight.cityinfra.CityInfraMainKt")
+    workingDir = rootProject.projectDir
+    classpath(
+        kotlin.targets.getByName("jvm").compilations.getByName("main").output.allOutputs,
+        kotlin.targets.getByName("jvm").compilations.getByName("main").runtimeDependencyFiles,
+    )
+}

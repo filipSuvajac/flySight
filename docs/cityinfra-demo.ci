@@ -1,0 +1,30 @@
+city "Maribor Center" {
+  road "Slovenska ulica" type street speed 30 {
+    line((15.646, 46.558), (15.649, 46.559));
+    bend((15.649, 46.559), (15.653, 46.558), -25);
+  };
+
+  building "Univerza" floors 4 use education {
+    box((15.647, 46.559), (15.648, 46.558));
+  };
+
+  park "Mestni park" {
+    polygon((15.641, 46.563), (15.646, 46.564), (15.647, 46.561), (15.642, 46.560));
+  };
+
+  water "Drava" type river {
+    polyline((15.620, 46.555), (15.640, 46.557), (15.660, 46.556), (15.680, 46.554));
+  };
+
+  utility "Optika center" type fiber material plastic {
+    polyline((15.641, 46.557), (15.644, 46.558), (15.648, 46.559));
+  };
+
+  stop "Glavni trg" mode bus at (15.645, 46.557);
+  poi "Zdravstveni dom" kind healthcare at (15.648, 46.556);
+
+  sensor "Prometni senzor 1" kind traffic at (15.647, 46.559) {
+    set("unit", "vehicles_per_hour");
+    set("provider", "Mestna obcina");
+  };
+}
