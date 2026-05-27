@@ -419,6 +419,7 @@ type EbirdObservation = {
   speciesCode: string;
   commonName: string;
   slovenianName: string;
+  imageUrl: string;
   scientificName: string;
   locationName: string;
   city: string;
@@ -447,10 +448,17 @@ type SlovenianBirdFamily = {
   birds?: Array<{
     name?: string;
     latinName?: string;
+    imageUrl?: string;
+    image_url?: string;
   }>;
 };
 
-const slovenianBirdNames = loadSlovenianBirdNames();
+type SlovenianBirdProfile = {
+  name: string;
+  imageUrl: string;
+};
+
+const slovenianBirdProfiles = loadSlovenianBirdProfiles();
 
 function attachEbirdWebSocket(server: Server) {
   const wss = new WebSocketServer({ server, path: "/ws/ebird" });
@@ -600,12 +608,14 @@ function normalizeEbirdObservation(observation: EbirdApiObservation): EbirdObser
   const locationName = String(observation.locName ?? "");
   const speciesCode = String(observation.speciesCode ?? "");
   const observedAt = String(observation.obsDt ?? "");
+  const birdProfile = slovenianBirdProfiles.get(normalizeScientificName(observation.sciName));
 
   return {
     id: `${speciesCode}-${locationName}-${observedAt}`,
     speciesCode,
     commonName: String(observation.comName ?? "Unknown species"),
-    slovenianName: slovenianBirdNames.get(normalizeScientificName(observation.sciName)) ?? "",
+    slovenianName: birdProfile?.name ?? "",
+    imageUrl: birdProfile?.imageUrl ?? "",
     scientificName: String(observation.sciName ?? ""),
     locationName,
     city: String(observation.subnational2Name ?? locationName),
@@ -645,8 +655,8 @@ function defaultEbirdMaxResults() {
   return clampNumber(process.env.EBIRD_MAX_RESULTS, 1, 10000, 500);
 }
 
-function loadSlovenianBirdNames() {
-  const names = new Map<string, string>();
+function loadSlovenianBirdProfiles() {
+  const profiles = new Map<string, SlovenianBirdProfile>();
 
   try {
     const file = readFileSync(new URL("../../composeApp/ptice_slovenije.json", import.meta.url), "utf8");
@@ -656,16 +666,17 @@ function loadSlovenianBirdNames() {
       for (const bird of family.birds ?? []) {
         const latinName = normalizeScientificName(bird.latinName);
         const slovenianName = String(bird.name ?? "").trim();
+        const imageUrl = String(bird.imageUrl ?? bird.image_url ?? "").trim();
         if (latinName && slovenianName) {
-          names.set(latinName, slovenianName);
+          profiles.set(latinName, { name: slovenianName, imageUrl });
         }
       }
     }
   } catch (error) {
-    console.warn("Could not load Slovenian bird names from ptice_slovenije.json", error);
+    console.warn("Could not load Slovenian bird profiles from ptice_slovenije.json", error);
   }
 
-  return names;
+  return profiles;
 }
 
 function normalizeScientificName(value: unknown) {

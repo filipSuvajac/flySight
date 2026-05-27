@@ -24,6 +24,7 @@ export type EbirdObservation = {
   speciesCode: string;
   commonName: string;
   slovenianName: string;
+  imageUrl: string;
   scientificName: string;
   locationName: string;
   city: string;
