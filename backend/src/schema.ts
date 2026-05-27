@@ -66,6 +66,19 @@ export async function ensureSchema() {
       created_at timestamptz not null default now()
     );
 
+    create table if not exists data_source_settings (
+      key text primary key,
+      name text not null,
+      enabled boolean not null default true,
+      region text not null default 'SI',
+      max_results integer not null default 500 check (max_results > 0),
+      recent_days integer not null default 30 check (recent_days > 0),
+      settings jsonb not null default '{}'::jsonb,
+      last_sync timestamptz,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+
     create or replace function set_updated_at()
     returns trigger as $$
     begin
@@ -75,7 +88,7 @@ export async function ensureSchema() {
     $$ language plpgsql;
   `);
 
-  for (const table of ["users", "bird_family", "bird_info", "location", "observation"]) {
+  for (const table of ["users", "bird_family", "bird_info", "location", "observation", "data_source_settings"]) {
     await query(`
       drop trigger if exists ${table}_updated_at on ${table};
       create trigger ${table}_updated_at
@@ -112,6 +125,14 @@ async function seedDemoData() {
       (1, 1, 1, 3, '2026-05-02', 'seed'),
       (2, 2, 2, 5, '2026-05-01', 'seed')
     on conflict (id) do nothing;
+
+    insert into data_source_settings (key, name, enabled, region, max_results, recent_days, settings)
+    values
+      ('ebird', 'eBird API', true, 'SI', 500, 30, '{"description":"Recent observations and hotspots from eBird"}'::jsonb),
+      ('dopps', 'DOPPS scraper', true, 'SI', 500, 30, '{"description":"Scraped Slovenian bird catalogue"}'::jsonb),
+      ('generated', 'Generated data', true, 'SI', 100, 365, '{"description":"Synthetic observations for demos"}'::jsonb),
+      ('cityinfra', 'CityInfra GeoJSON', true, 'SI', 100, 30, '{"description":"GeoJSON exported from the CityInfra DSL"}'::jsonb)
+    on conflict (key) do nothing;
 
     select setval(pg_get_serial_sequence('bird_family', 'id'), greatest((select max(id) from bird_family), 1));
     select setval(pg_get_serial_sequence('bird_info', 'id'), greatest((select max(id) from bird_info), 1));

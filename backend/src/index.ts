@@ -49,6 +49,9 @@ app.get("/", (_req, res) => {
       "/auth/login",
       "/auth/me",
       "/api/tables",
+      "/api/visualization/observations",
+      "/api/visualization/summary",
+      "/api/data-sources",
       "/api/:table",
       "/api/import/dopps",
       "/api/generate/observations",
@@ -132,6 +135,195 @@ app.post("/auth/login", async (req, res, next) => {
 
 app.get("/auth/me", requireAuth, (req, res) => {
   res.json({ user: req.user });
+});
+
+app.get("/api/visualization/observations", requireAuth, async (req, res, next) => {
+  try {
+    const filters = buildVisualizationFilters(req.query);
+    const limit = clampNumber(req.query.limit, 1, 5000, 1000);
+    const result = await query<VisualizationObservationRow>(
+      `select
+         o.id as "observationId",
+         o.observed_count as "observedCount",
+         o.event_date::text as "eventDate",
+         o.source,
+         o.metadata,
+         b.id as "birdId",
+         b.name as "speciesName",
+         b.latin_name as "scientificName",
+         b.image_url as "imageUrl",
+         f.name as "familyName",
+         f.latin_name as "familyLatinName",
+         l.id as "locationId",
+         l.name as "locationName",
+         l.latitude,
+         l.longitude
+       from observation o
+       join bird_info b on b.id = o.bird_id
+       left join bird_family f on f.id = b.family_id
+       join location l on l.id = o.location_id
+       ${filters.whereClause}
+       order by o.event_date desc, o.id desc
+       limit $${filters.params.length + 1}`,
+      [...filters.params, limit]
+    );
+
+    res.json({ observations: result.rows });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/visualization/summary", requireAuth, async (req, res, next) => {
+  try {
+    const filters = buildVisualizationFilters(req.query);
+    const species = await query<ChartCountRow>(
+      `select
+         b.name as label,
+         count(*)::int as observations,
+         coalesce(sum(o.observed_count), 0)::int as "totalCount"
+       from observation o
+       join bird_info b on b.id = o.bird_id
+       left join bird_family f on f.id = b.family_id
+       join location l on l.id = o.location_id
+       ${filters.whereClause}
+       group by b.name
+       order by observations desc, b.name asc
+       limit 15`,
+      filters.params
+    );
+    const timeline = await query<TimelineRow>(
+      `select
+         o.event_date::text as date,
+         count(*)::int as observations,
+         coalesce(sum(o.observed_count), 0)::int as "totalCount"
+       from observation o
+       join bird_info b on b.id = o.bird_id
+       left join bird_family f on f.id = b.family_id
+       join location l on l.id = o.location_id
+       ${filters.whereClause}
+       group by o.event_date
+       order by o.event_date asc`,
+      filters.params
+    );
+    const locations = await query<LocationSummaryRow>(
+      `select
+         l.id as "locationId",
+         l.name as label,
+         l.latitude,
+         l.longitude,
+         count(*)::int as observations,
+         coalesce(sum(o.observed_count), 0)::int as "totalCount"
+       from observation o
+       join bird_info b on b.id = o.bird_id
+       left join bird_family f on f.id = b.family_id
+       join location l on l.id = o.location_id
+       ${filters.whereClause}
+       group by l.id, l.name, l.latitude, l.longitude
+       order by observations desc, l.name asc
+       limit 15`,
+      filters.params
+    );
+    const sources = await query<ChartCountRow>(
+      `select
+         o.source as label,
+         count(*)::int as observations,
+         coalesce(sum(o.observed_count), 0)::int as "totalCount"
+       from observation o
+       join bird_info b on b.id = o.bird_id
+       left join bird_family f on f.id = b.family_id
+       join location l on l.id = o.location_id
+       ${filters.whereClause}
+       group by o.source
+       order by observations desc, o.source asc`,
+      filters.params
+    );
+
+    res.json({
+      species: species.rows,
+      timeline: timeline.rows,
+      locations: locations.rows,
+      sources: sources.rows
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/data-sources", requireAuth, async (_req, res, next) => {
+  try {
+    const result = await query<DataSourceSettingsRow>(
+      `select
+         key,
+         name,
+         enabled,
+         region,
+         max_results as "maxResults",
+         recent_days as "recentDays",
+         settings,
+         last_sync as "lastSync",
+         updated_at as "updatedAt"
+       from data_source_settings
+       order by key`
+    );
+    res.json({ sources: result.rows });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.put("/api/data-sources/:key", requireAuth, async (req, res, next) => {
+  try {
+    const key = normalizeDataSourceKey(firstParam(req.params.key));
+    const existing = await query<DataSourceSettingsRow>(
+      `select
+         key,
+         name,
+         enabled,
+         region,
+         max_results as "maxResults",
+         recent_days as "recentDays",
+         settings,
+         last_sync as "lastSync",
+         updated_at as "updatedAt"
+       from data_source_settings
+       where key = $1`,
+      [key]
+    );
+
+    if (existing.rowCount === 0) {
+      res.status(404).json({ error: `Unknown data source '${key}'.` });
+      return;
+    }
+
+    const updates = dataSourceUpdates(req.body);
+    if (updates.fields.length === 0) {
+      res.json(existing.rows[0]);
+      return;
+    }
+
+    const setters = updates.fields.map((field, index) => `${field} = $${index + 2}`).join(", ");
+    const result = await query<DataSourceSettingsRow>(
+      `update data_source_settings
+       set ${setters}
+       where key = $1
+       returning
+         key,
+         name,
+         enabled,
+         region,
+         max_results as "maxResults",
+         recent_days as "recentDays",
+         settings,
+         last_sync as "lastSync",
+         updated_at as "updatedAt"`,
+      [key, ...updates.values]
+    );
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.get("/api/:table", requireAuth, async (req, res, next) => {
@@ -443,6 +635,54 @@ type EbirdHotspot = {
   speciesAllTime: number | null;
 };
 
+type VisualizationObservationRow = {
+  observationId: number;
+  observedCount: number;
+  eventDate: string;
+  source: string;
+  metadata: Record<string, unknown>;
+  birdId: number;
+  speciesName: string;
+  scientificName: string;
+  imageUrl: string;
+  familyName: string | null;
+  familyLatinName: string | null;
+  locationId: number;
+  locationName: string;
+  latitude: number;
+  longitude: number;
+};
+
+type ChartCountRow = {
+  label: string;
+  observations: number;
+  totalCount: number;
+};
+
+type TimelineRow = {
+  date: string;
+  observations: number;
+  totalCount: number;
+};
+
+type LocationSummaryRow = ChartCountRow & {
+  locationId: number;
+  latitude: number;
+  longitude: number;
+};
+
+type DataSourceSettingsRow = {
+  key: string;
+  name: string;
+  enabled: boolean;
+  region: string;
+  maxResults: number;
+  recentDays: number;
+  settings: Record<string, unknown>;
+  lastSync: string | null;
+  updatedAt: string;
+};
+
 type SlovenianBirdFamily = {
   birds?: Array<{
     name?: string;
@@ -676,6 +916,125 @@ function sendSocketJson(socket: WebSocket, payload: unknown) {
   if (socket.readyState === WebSocket.OPEN) {
     socket.send(JSON.stringify(payload));
   }
+}
+
+function buildVisualizationFilters(queryParams: express.Request["query"]) {
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+  const species = normalizeText(firstQueryValue(queryParams.species));
+  const location = normalizeText(firstQueryValue(queryParams.location));
+  const source = normalizeText(firstQueryValue(queryParams.source));
+  const from = optionalDateParam(queryParams.from ?? queryParams.dateFrom, "from");
+  const to = optionalDateParam(queryParams.to ?? queryParams.dateTo, "to");
+
+  if (species) {
+    params.push(`%${species.toLowerCase()}%`);
+    conditions.push(
+      `(lower(b.name) like $${params.length}
+        or lower(b.latin_name) like $${params.length}
+        or lower(coalesce(f.name, '')) like $${params.length}
+        or lower(coalesce(f.latin_name, '')) like $${params.length})`
+    );
+  }
+
+  if (location) {
+    params.push(`%${location.toLowerCase()}%`);
+    conditions.push(`lower(l.name) like $${params.length}`);
+  }
+
+  if (source) {
+    params.push(source);
+    conditions.push(`lower(o.source) = lower($${params.length})`);
+  }
+
+  if (from) {
+    params.push(from);
+    conditions.push(`o.event_date >= $${params.length}::date`);
+  }
+
+  if (to) {
+    params.push(to);
+    conditions.push(`o.event_date <= $${params.length}::date`);
+  }
+
+  return {
+    whereClause: conditions.length ? `where ${conditions.join(" and ")}` : "",
+    params
+  };
+}
+
+function dataSourceUpdates(body: unknown) {
+  const source = isPlainRecord(body) ? body : {};
+  const fields: string[] = [];
+  const values: unknown[] = [];
+
+  if (Object.prototype.hasOwnProperty.call(source, "enabled")) {
+    if (typeof source.enabled !== "boolean") {
+      throw Object.assign(new Error("enabled must be a boolean."), { statusCode: 400 });
+    }
+    fields.push("enabled");
+    values.push(source.enabled);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(source, "region")) {
+    const region = normalizeText(source.region);
+    if (!region) {
+      throw Object.assign(new Error("region must not be empty."), { statusCode: 400 });
+    }
+    fields.push("region");
+    values.push(region);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(source, "maxResults")) {
+    fields.push("max_results");
+    values.push(clampNumber(source.maxResults, 1, 10000, 500));
+  }
+
+  if (Object.prototype.hasOwnProperty.call(source, "recentDays")) {
+    fields.push("recent_days");
+    values.push(clampNumber(source.recentDays, 1, 365, 30));
+  }
+
+  if (Object.prototype.hasOwnProperty.call(source, "settings")) {
+    if (!isPlainRecord(source.settings)) {
+      throw Object.assign(new Error("settings must be an object."), { statusCode: 400 });
+    }
+    fields.push("settings");
+    values.push(source.settings);
+  }
+
+  if (source.markSynced === true) {
+    fields.push("last_sync");
+    values.push(new Date().toISOString());
+  }
+
+  return { fields, values };
+}
+
+function firstQueryValue(value: unknown) {
+  if (Array.isArray(value)) return value.length ? String(value[0] ?? "") : "";
+  return String(value ?? "");
+}
+
+function optionalDateParam(value: unknown, name: string) {
+  const text = firstQueryValue(value).trim();
+  if (!text) return "";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    throw Object.assign(new Error(`${name} must be in YYYY-MM-DD format.`), { statusCode: 400 });
+  }
+  return text;
+}
+
+function normalizeDataSourceKey(value: string) {
+  const key = value.trim().toLowerCase();
+  if (!/^[a-z0-9_-]+$/.test(key)) {
+    throw Object.assign(new Error("Invalid data source key."), { statusCode: 400 });
+  }
+  return key;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function numberOr(value: unknown, fallback: number) {
