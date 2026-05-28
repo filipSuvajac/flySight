@@ -791,9 +791,8 @@ button.secondary {
   height: 34px;
   place-items: center;
   border: 2px solid #ffffff;
-  border-radius: 68% 68% 68% 0;
+  border-radius: 50% 50% 50% 0;
   background: #0f766e;
-  box-shadow: 0 10px 22px rgba(15, 118, 110, 0.32);
   transform: rotate(-45deg);
 }
 
@@ -822,12 +821,12 @@ button.secondary {
   width: 86px;
   height: 86px;
   flex: 0 0 86px;
+  padding: 0;
   overflow: hidden;
-  border: 1px solid #d9e2ec;
   border-radius: 8px;
+  border: 1px solid #d9e2ec;
   background: #f0f4f8;
   cursor: zoom-in;
-  padding: 0;
 }
 
 .bird-popup-image img {
@@ -894,11 +893,6 @@ button.secondary {
   border: 0;
   background: rgba(16, 36, 47, 0.72);
   cursor: zoom-out;
-  transform: none;
-}
-
-.bird-image-lightbox-backdrop:hover {
-  transform: none;
 }
 
 .bird-image-lightbox-content {

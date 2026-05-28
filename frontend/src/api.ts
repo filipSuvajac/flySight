@@ -65,15 +65,8 @@ export async function fetchEbirdHotspots(token: string): Promise<EbirdHotspot[]>
   return Array.isArray(payload.hotspots) ? payload.hotspots : [];
 }
 
-export async function fetchRecentEbirdObservations(
-  token: string,
-  days = 30,
-  maxResults?: number
-): Promise<EbirdObservation[]> {
-  const params = new URLSearchParams({ days: String(days) });
-  if (maxResults) params.set("maxResults", String(maxResults));
-
-  const response = await fetch(`${API_URL}/api/ebird/recent?${params.toString()}`, {
+export async function fetchRecentEbirdObservations(token: string, days = 30): Promise<EbirdObservation[]> {
+  const response = await fetch(`${API_URL}/api/ebird/recent?days=${days}`, {
     headers: { Authorization: `Bearer ${token}` }
   });
   if (!response.ok) throw new Error(`eBird observations failed with HTTP ${response.status}`);
