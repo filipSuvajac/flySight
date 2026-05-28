@@ -29,10 +29,10 @@ export function FlySightMap() {
     <section className="map-card">
       <div className="map-card-header">
         <div>
-          <span>Live habitat view</span>
-          <h2>Slovenia sightings map</h2>
+          <span>Habitat map</span>
+          <h2>Bird activity across Slovenia</h2>
         </div>
-        <div className="map-pulse">Demo markers</div>
+        <div className="map-pulse">Marker layer</div>
       </div>
 
       <MapContainer center={[46.25, 15.05]} zoom={8} scrollWheelZoom className="leaflet-map">
@@ -53,4 +53,3 @@ export function FlySightMap() {
     </section>
   );
 }
-
