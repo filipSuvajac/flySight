@@ -1,5 +1,7 @@
 export type AuthMode = "login" | "register";
 
+export type WorkspaceRoute = "explore" | "analytics" | "data" | "admin" | "cityinfra";
+
 export type Health = {
   status: string;
   database: string;
@@ -47,4 +49,16 @@ export type EbirdHotspot = {
   subnational2Code: string;
   latestObservationDate: string;
   speciesAllTime: number | null;
+};
+
+export type DataSourceSettings = {
+  key: string;
+  name: string;
+  enabled: boolean;
+  region: string;
+  maxResults: number;
+  recentDays: number;
+  settings: Record<string, unknown>;
+  lastSync: string | null;
+  updatedAt: string;
 };
