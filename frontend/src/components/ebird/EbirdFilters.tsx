@@ -5,12 +5,14 @@ type EbirdFiltersProps = {
   locationFilter: string;
   speciesFilter: string;
   dateFilter: string;
+  sourceFilter: string;
   recentDays: string;
   minDate: string;
   today: string;
   onLocationChange: (value: string) => void;
   onSpeciesChange: (value: string) => void;
   onDateChange: (value: string) => void;
+  onSourceChange: (value: string) => void;
   onRecentDaysChange: (value: string) => void;
 };
 
@@ -19,12 +21,14 @@ export function EbirdFilters({
   locationFilter,
   speciesFilter,
   dateFilter,
+  sourceFilter,
   recentDays,
   minDate,
   today,
   onLocationChange,
   onSpeciesChange,
   onDateChange,
+  onSourceChange,
   onRecentDaysChange
 }: EbirdFiltersProps) {
   return (
@@ -56,6 +60,13 @@ export function EbirdFilters({
               value={dateFilter}
               onChange={(event) => onDateChange(event.target.value)}
             />
+          </label>
+          <label>
+            Source
+            <select value={sourceFilter} onChange={(event) => onSourceChange(event.target.value)}>
+              <option value="">All sources</option>
+              <option value="ebird">eBird</option>
+            </select>
           </label>
         </>
       )}
