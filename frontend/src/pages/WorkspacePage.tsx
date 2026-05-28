@@ -114,7 +114,7 @@ function CityInfraPage() {
       </div>
       <div className="route-panel">
         <h2>GeoJSON workspace</h2>
-        <p>City model: Maribor Center</p>
+        <p>City model: Demo</p>
         <div className="cityinfra-preview">
           <span className="road-line" />
           <span className="park-block" />
