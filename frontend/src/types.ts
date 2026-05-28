@@ -1,5 +1,7 @@
 export type AuthMode = "login" | "register";
 
+export type WorkspaceRoute = "explore" | "analytics" | "data" | "admin" | "cityinfra";
+
 export type Health = {
   status: string;
   database: string;

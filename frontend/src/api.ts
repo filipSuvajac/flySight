@@ -1,6 +1,6 @@
 import type { AuthMode, AuthResponse, Counts, EbirdHotspot, EbirdObservation, Health } from "./types";
 
-export const API_URL = import.meta.env.VITE_API_URL ?? window.location.origin;
+export const API_URL = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? "http://localhost" : window.location.origin);
 export const TABLES = ["bird_family", "bird_info", "location", "observation"];
 
 export function webSocketUrl(path: string, params: Record<string, string>) {
