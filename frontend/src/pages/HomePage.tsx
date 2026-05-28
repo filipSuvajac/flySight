@@ -38,10 +38,33 @@ export function HomePage({ token, counts, error }: HomePageProps) {
   }
 
   return (
-    <>
-      <section className="home-grid">
+    <section className="explore-page">
+      <div className="explore-topbar">
+        <div className="page-heading">
+          <div>
+            <span>Explore</span>
+            <h1>Map-first observations</h1>
+          </div>
+        </div>
+        <div className="explore-actions">
+          <span>Shared filters</span>
+          <span>Live eBird data</span>
+        </div>
+      </div>
+
+      <section className="explore-layout">
         <FlySightMap token={token} />
-        <DashboardPanel counts={counts} error={error} />
+        <ExploreSidePanel
+          counts={counts}
+          error={error}
+          filters={filters}
+          minDate={minDate}
+          recentDays={recentDays}
+          selectedObservation={selectedObservation}
+          today={today}
+          onFiltersChange={updateFilters}
+          onRecentDaysChange={updateRecentDays}
+        />
       </section>
 
       <section className="explore-results">
