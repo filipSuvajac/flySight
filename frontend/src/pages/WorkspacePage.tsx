@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { Counts, Health, User, WorkspaceRoute } from "../types";
 import { AppLayout } from "../layouts/AppLayout";
 import { HomePage } from "./HomePage";
+import { AdminPage } from "./AdminPage";
 import { StatsGrid } from "../components/StatsGrid";
 
 type WorkspacePageProps = {
@@ -21,7 +22,7 @@ export function WorkspacePage({ health, user, token, counts, error, onLogout }: 
       {activeRoute === "explore" && <HomePage token={token} counts={counts} error={error} />}
       {activeRoute === "analytics" && <AnalyticsPage counts={counts} />}
       {activeRoute === "data" && <DataPage counts={counts} error={error} />}
-      {activeRoute === "admin" && <AdminPage health={health} />}
+      {activeRoute === "admin" && <AdminPage health={health} token={token} />}
       {activeRoute === "cityinfra" && <CityInfraPage />}
     </AppLayout>
   );
@@ -76,30 +77,6 @@ function DataPage({ counts, error }: { counts: Counts; error: string }) {
             <span>Refresh after API connection</span>
           </article>
         )}
-      </div>
-    </section>
-  );
-}
-
-function AdminPage({ health }: { health: Health | null }) {
-  const sources = ["eBird API", "DOPPS scraper", "Generated data", "CityInfra GeoJSON"];
-
-  return (
-    <section className="route-page">
-      <div className="page-heading">
-        <span>Admin</span>
-        <h1>Data sources</h1>
-      </div>
-      <div className="source-grid">
-        {sources.map((source) => (
-          <article className="source-card" key={source}>
-            <div>
-              <strong>{source}</strong>
-              <span>{health ? "Available" : "Waiting for API"}</span>
-            </div>
-            <span className="source-toggle" />
-          </article>
-        ))}
       </div>
     </section>
   );

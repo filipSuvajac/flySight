@@ -50,3 +50,15 @@ export type EbirdHotspot = {
   latestObservationDate: string;
   speciesAllTime: number | null;
 };
+
+export type DataSourceSettings = {
+  key: string;
+  name: string;
+  enabled: boolean;
+  region: string;
+  maxResults: number;
+  recentDays: number;
+  settings: Record<string, unknown>;
+  lastSync: string | null;
+  updatedAt: string;
+};
