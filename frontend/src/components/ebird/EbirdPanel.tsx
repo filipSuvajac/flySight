@@ -12,12 +12,24 @@ import { RecentObservationsTable } from "./RecentObservationsTable";
 
 type EbirdPanelProps = {
   token: string;
+  filters?: ObservationFilters;
+  recentDays?: string;
+  hideFilters?: boolean;
+  onFiltersChange?: (filters: ObservationFilters) => void;
+  onRecentDaysChange?: (value: string) => void;
 };
 
-export function EbirdPanel({ token }: EbirdPanelProps) {
+export function EbirdPanel({
+  token,
+  filters,
+  recentDays,
+  hideFilters = false,
+  onFiltersChange,
+  onRecentDaysChange
+}: EbirdPanelProps) {
   const socketRef = useRef<WebSocket | null>(null);
   const [mode, setMode] = useState<EbirdMode>("recent");
-  const [recentDays, setRecentDays] = useState("30");
+  const [internalRecentDays, setInternalRecentDays] = useState("30");
   const [observations, setObservations] = useState<EbirdObservation[]>([]);
   const [hotspots, setHotspots] = useState<EbirdHotspot[]>([]);
   const [selectedHotspot, setSelectedHotspot] = useState<EbirdHotspot | null>(null);
@@ -41,7 +53,7 @@ export function EbirdPanel({ token }: EbirdPanelProps) {
     socket.addEventListener("open", () => {
       setStatus("Loading recent Slovenia observations from eBird...");
       setError("");
-      socket.send(JSON.stringify({ type: "refresh", days: Number(recentDays) || 30 }));
+      socket.send(JSON.stringify({ type: "refresh", days: Number(activeRecentDays) || 30 }));
     });
 
     socket.addEventListener("message", (event) => handleSocketMessage(event.data));
@@ -57,7 +69,7 @@ export function EbirdPanel({ token }: EbirdPanelProps) {
       socketRef.current = null;
       socket.close();
     };
-  }, [recentDays, token]);
+  }, [activeRecentDays, token]);
 
   useEffect(() => {
     if (mode !== "hotspots" || hotspots.length > 0) return;
@@ -105,7 +117,7 @@ export function EbirdPanel({ token }: EbirdPanelProps) {
   }
 
   function refreshRecentObservations() {
-    socketRef.current?.send(JSON.stringify({ type: "refresh", days: Number(recentDays) || 30 }));
+    socketRef.current?.send(JSON.stringify({ type: "refresh", days: Number(activeRecentDays) || 30 }));
   }
 
   function loadHotspots() {
@@ -125,7 +137,7 @@ export function EbirdPanel({ token }: EbirdPanelProps) {
   function loadHotspotDetails(hotspot: EbirdHotspot) {
     setSelectedHotspot(hotspot);
     setHotspotDetailStatus(`Loading recent sightings for ${hotspot.name}...`);
-    fetchEbirdHotspotObservations(token, hotspot.id, Number(recentDays) || 30)
+    fetchEbirdHotspotObservations(token, hotspot.id, Number(activeRecentDays) || 30)
       .then((nextObservations) => {
         setHotspotObservations(nextObservations);
         setHotspotDetailStatus(`${nextObservations.length} sightings loaded for ${hotspot.name}`);
@@ -183,7 +195,7 @@ export function EbirdPanel({ token }: EbirdPanelProps) {
               hotspot={selectedHotspot}
               observations={hotspotObservations}
               status={hotspotDetailStatus}
-              recentDays={recentDays}
+              recentDays={activeRecentDays}
               onClose={() => setSelectedHotspot(null)}
             />
           )}
@@ -192,4 +204,3 @@ export function EbirdPanel({ token }: EbirdPanelProps) {
     </section>
   );
 }
-
