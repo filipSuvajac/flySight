@@ -1,38 +1,92 @@
+import { useEffect, useMemo, useState } from "react";
+import L from "leaflet";
 import { MapContainer, Marker, Popup, TileLayer } from "react-leaflet";
+import { fetchRecentEbirdObservations } from "../../api";
+import {
+  emptyObservationFilters,
+  filterEbirdObservations,
+  type ObservationFilters
+} from "../../observations/filters";
+import type { EbirdObservation } from "../../types";
+import birdIconUrl from "../../assets/bird-fill-svgrepo-com.svg";
+import { formatDateTime } from "../ebird/format";
 
-type DemoMarker = {
-  name: string;
-  description: string;
-  position: [number, number];
+type FlySightMapProps = {
+  token: string;
+  filters?: ObservationFilters;
+  recentDays?: string;
+  onObservationSelect?: (observation: EbirdObservation) => void;
 };
 
-const demoMarkers: DemoMarker[] = [
-  {
-    name: "Maribor",
-    description: "Demo hotspot area around the Drava river.",
-    position: [46.5547, 15.6459]
-  },
-  {
-    name: "Ljubljana",
-    description: "Demo central Slovenia observation cluster.",
-    position: [46.0569, 14.5058]
-  },
-  {
-    name: "Mestni park Maribor",
-    description: "Example city park marker for hotspot exploration.",
-    position: [46.565, 15.644]
-  }
-];
+function hasCoordinates(observation: EbirdObservation): observation is EbirdObservation & {
+  latitude: number;
+  longitude: number;
+} {
+  return observation.latitude !== null && observation.longitude !== null;
+}
 
-export function FlySightMap() {
+const birdMarkerIcon = L.divIcon({
+  className: "bird-marker",
+  html: `
+    <span class="bird-marker-pin" aria-hidden="true">
+      <img src="${birdIconUrl}" alt="" />
+    </span>
+  `,
+  iconSize: [36, 44],
+  iconAnchor: [18, 42],
+  popupAnchor: [0, -40]
+});
+
+export function FlySightMap({
+  token,
+  filters = emptyObservationFilters,
+  recentDays = "30",
+  onObservationSelect
+}: FlySightMapProps) {
+  const [observations, setObservations] = useState<EbirdObservation[]>([]);
+  const [selectedImage, setSelectedImage] = useState<{ src: string; alt: string } | null>(null);
+  const [status, setStatus] = useState("Loading eBird sightings...");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    const days = Number(recentDays) || 30;
+
+    setStatus("Loading eBird sightings...");
+    setError("");
+
+    fetchRecentEbirdObservations(token, days)
+      .then((nextObservations) => {
+        if (cancelled) return;
+        setObservations(nextObservations);
+        setStatus(`${nextObservations.length} recent eBird sightings`);
+      })
+      .catch((mapError: unknown) => {
+        if (cancelled) return;
+        setObservations([]);
+        setStatus("eBird map needs attention");
+        setError(mapError instanceof Error ? mapError.message : "Could not load eBird sightings.");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [recentDays, token]);
+
+  const markers = useMemo(
+    () => filterEbirdObservations(observations, filters).filter(hasCoordinates),
+    [filters, observations]
+  );
+
   return (
     <section className="map-card">
       <div className="map-card-header">
         <div>
-          <span>Habitat map</span>
-          <h2>Bird activity across Slovenia</h2>
+          <span>Live eBird view</span>
+          <h2>Slovenia sightings map</h2>
+          {error && <p className="map-error">{error}</p>}
         </div>
-        <div className="map-pulse">Marker layer</div>
+        <div className="map-pulse">{markers.length} mapped</div>
       </div>
 
       <MapContainer center={[46.25, 15.05]} zoom={8} scrollWheelZoom className="leaflet-map">
@@ -40,16 +94,84 @@ export function FlySightMap() {
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
-        {demoMarkers.map((marker) => (
-          <Marker key={marker.name} position={marker.position}>
+        {markers.map((observation) => (
+          <Marker
+            eventHandlers={{
+              click: () => onObservationSelect?.(observation)
+            }}
+            icon={birdMarkerIcon}
+            key={observation.id}
+            position={[observation.latitude, observation.longitude]}
+          >
             <Popup>
-              <strong>{marker.name}</strong>
-              <br />
-              {marker.description}
+              <div className="bird-popup">
+                <div className="bird-popup-summary">
+                  {observation.imageUrl && (
+                    <button
+                      aria-label={`Open larger image of ${observation.slovenianName || observation.commonName}`}
+                      className="bird-popup-image"
+                      onClick={() => setSelectedImage({
+                        src: observation.imageUrl,
+                        alt: observation.slovenianName || observation.commonName
+                      })}
+                      type="button"
+                    >
+                      <img
+                        alt={observation.slovenianName || observation.commonName}
+                        src={observation.imageUrl}
+                      />
+                    </button>
+                  )}
+                  <div className="bird-popup-names">
+                    <strong>{observation.slovenianName || observation.commonName}</strong>
+                    <span>{observation.commonName}</span>
+                    <span>{observation.scientificName || observation.speciesCode}</span>
+                  </div>
+                </div>
+                <div className="bird-popup-details">
+                  <dl className="bird-popup-column">
+                    <div>
+                      <dt>Location</dt>
+                      <dd>{observation.locationName || observation.city}</dd>
+                    </div>
+                    <div>
+                      <dt>Observed</dt>
+                      <dd>{formatDateTime(observation.observedAt)}</dd>
+                    </div>
+                  </dl>
+                  <dl className="bird-popup-column">
+                    <div>
+                      <dt>Count</dt>
+                      <dd>{observation.count ?? "-"}</dd>
+                    </div>
+                    <div>
+                      <dt>Status</dt>
+                      <dd>{observation.reviewed ? "Reviewed" : observation.valid ? "Valid" : "Pending"}</dd>
+                    </div>
+                  </dl>
+                </div>
+              </div>
             </Popup>
           </Marker>
         ))}
       </MapContainer>
+      <p className="map-status">{status}</p>
+      {selectedImage && (
+        <div className="bird-image-lightbox" role="dialog" aria-modal="true" aria-label={selectedImage.alt}>
+          <button
+            className="bird-image-lightbox-backdrop"
+            onClick={() => setSelectedImage(null)}
+            type="button"
+            aria-label="Close image preview"
+          />
+          <div className="bird-image-lightbox-content">
+            <button className="bird-image-lightbox-close" onClick={() => setSelectedImage(null)} type="button">
+              Close
+            </button>
+            <img alt={selectedImage.alt} src={selectedImage.src} />
+          </div>
+        </div>
+      )}
     </section>
   );
 }
