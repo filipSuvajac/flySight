@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import L from "leaflet";
 import { MapContainer, Marker, Popup, TileLayer } from "react-leaflet";
-import { useEffect, useMemo, useState } from "react";
-import L from "leaflet";
 import { fetchRecentEbirdObservations } from "../../api";
 import type { EbirdObservation } from "../../types";
 import { formatDateTime } from "../ebird/format";
