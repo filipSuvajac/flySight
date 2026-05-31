@@ -55,9 +55,24 @@ object GeoJsonExporter {
                             item.metadata.toProperties(),
                     ),
                 )
+                is Bridge -> features.add(
+                    GeoJsonFeature(
+                        lineString(item.commands.toLineString()),
+                        baseProperties("bridge", item.name, scope) +
+                            ("bridgeType" to item.type) +
+                            item.metadata.toProperties(),
+                    ),
+                )
                 is Building -> addAreaFeatures(features, item.name, "building", item.commands, scope, item.metadata, mapOf("floors" to item.floors, "use" to item.use))
                 is Park -> addAreaFeatures(features, item.name, "park", item.commands, scope, item.metadata)
-                is Zone -> addAreaFeatures(features, item.name, "zone", item.commands, scope, item.metadata, mapOf("use" to item.use))
+                is Roundabout -> features.add(
+                    GeoJsonFeature(
+                        polygonGeometry(item.circle.toRing()),
+                        baseProperties("roundabout", item.name, scope) +
+                            ("roundaboutType" to item.type) +
+                            item.metadata.toProperties(),
+                    ),
+                )
                 is Stop -> features.add(GeoJsonFeature(point(item.at), baseProperties("stop", item.name, scope) + ("mode" to item.mode)))
                 is Poi -> features.add(GeoJsonFeature(point(item.at), baseProperties("poi", item.name, scope) + ("poiKind" to item.kind)))
                 is Sensor -> features.add(GeoJsonFeature(point(item.at), baseProperties("sensor", item.name, scope) + ("sensorKind" to item.kind) + item.metadata.toProperties()))
@@ -244,3 +259,5 @@ private fun String.escapeJson(): String =
             }
         }
     }
+
+

@@ -36,6 +36,12 @@ class CityInfraTest {
               sensor "PM10" kind air_quality at (15.2, 46.2) {
                 set("unit", "ug/m3");
               };
+              bridge "B" type road {
+                line((15.0, 46.0), (15.0, 45.9));
+              };
+              roundabout "R" type road {
+                circle((15.2, 46.2), 0.016);
+              };
             }
             """.trimIndent(),
         )
@@ -44,6 +50,10 @@ class CityInfraTest {
         assertTrue(geoJson.contains("\"kind\":\"park\""))
         assertTrue(geoJson.contains("\"sensorKind\":\"air_quality\""))
         assertTrue(geoJson.contains("\"meta:unit\":\"ug/m3\""))
+        assertTrue(geoJson.contains("\"kind\":\"bridge\""))
+        assertTrue(geoJson.contains("\"bridgeType\":\"road\""))
+        assertTrue(geoJson.contains("\"kind\":\"roundabout\""))
+        assertTrue(geoJson.contains("\"roundaboutType\":\"road\""))
     }
 
     @Test
@@ -76,3 +86,5 @@ class CityInfraTest {
         }
     }
 }
+
+
