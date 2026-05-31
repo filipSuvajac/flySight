@@ -39,7 +39,8 @@ class Parser(private val tokens: List<Token>) {
             "stop" -> parseStop()
             "poi" -> parsePoi()
             "sensor" -> parseSensor()
-            "zone" -> parseZone()
+            "bridge" -> parseBridge()
+            "roundabout" -> parseRoundabout()
             "set" -> MetadataItem(parseMetadata())
             else -> error("city item")
         }
@@ -162,19 +163,32 @@ class Parser(private val tokens: List<Token>) {
         return Sensor(name, kind, at, metadata)
     }
 
-    private fun parseZone(): Zone {
-        expectKeyword("zone")
+    private fun parseBridge(): Bridge {
+        expectKeyword("bridge")
         val name = expectString()
-        expectKeyword("use")
-        val use = expectIdentifier()
+        expectKeyword("type")
+        val type = expectIdentifier()
         expect(TokenKind.LeftBrace, "{")
-        val commands = parseAreaCommands()
+        val commands = parsePathCommands()
         val metadata = parseMetadataItems()
         expect(TokenKind.RightBrace, "}")
         expect(TokenKind.Semicolon, ";")
-        return Zone(name, use, commands, metadata)
+        return Bridge(name, type, commands, metadata)
     }
 
+
+    private fun parseRoundabout(): Roundabout {
+        expectKeyword("roundabout")
+        val name = expectString()
+        expectKeyword("type")
+        val type = expectIdentifier()
+        expect(TokenKind.LeftBrace, "{")
+        val circle = parseCircle()
+        val metadata = parseMetadataItems()
+        expect(TokenKind.RightBrace, "}")
+        expect(TokenKind.Semicolon, ";")
+        return Roundabout(name, type, circle, metadata)
+    }
     private fun parsePathCommands(): List<PathCommand> {
         val commands = mutableListOf<PathCommand>()
         while (peek().lexeme in setOf("line", "bend", "polyline")) {
@@ -367,3 +381,5 @@ class Parser(private val tokens: List<Token>) {
         throw ParseException("Expected $expected at ${token.line}:${token.column}, got '${token.lexeme}'")
     }
 }
+
+

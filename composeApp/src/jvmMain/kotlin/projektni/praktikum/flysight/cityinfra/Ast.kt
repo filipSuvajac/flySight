@@ -76,10 +76,17 @@ data class Sensor(
     val metadata: List<Metadata>,
 ) : CityItem
 
-data class Zone(
+data class Bridge(
     val name: String,
-    val use: String,
-    val commands: List<AreaCommand>,
+    val type: String,
+    val commands: List<PathCommand>,
+    val metadata: List<Metadata>,
+) : CityItem
+
+data class Roundabout(
+    val name: String,
+    val type: String,
+    val circle: Circle,
     val metadata: List<Metadata>,
 ) : CityItem
 
@@ -156,3 +163,5 @@ class Bezier(
         }
     }
 }
+
+

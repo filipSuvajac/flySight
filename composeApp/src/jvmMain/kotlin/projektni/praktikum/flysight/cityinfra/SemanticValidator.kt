@@ -28,13 +28,16 @@ object SemanticValidator {
                     validateAreaCommands(item.name, item.commands)
                 }
                 is Park -> validateAreaCommands(item.name, item.commands)
-                is Zone -> validateAreaCommands(item.name, item.commands)
+                is Roundabout -> {
+                    if (item.circle.radiusKm <= 0.0) throw SemanticException("Roundabout '${item.name}' must have positive radius")
+                }
                 is MetadataItem,
                 is Poi,
                 is Sensor,
                 is Stop,
                 is Utility,
                 is Water,
+                is Bridge,
                 -> Unit
             }
         }
@@ -64,7 +67,8 @@ object SemanticValidator {
             is Stop -> "stop" to name
             is Poi -> "poi" to name
             is Sensor -> "sensor" to name
-            is Zone -> "zone" to name
+            is Bridge -> "bridge" to name
+            is Roundabout -> "roundabout" to name
             is MetadataItem -> null
         }
 
@@ -88,3 +92,5 @@ object SemanticValidator {
     private fun Coordinates.almostEquals(other: Coordinates): Boolean =
         abs(lon - other.lon) < 0.0000001 && abs(lat - other.lat) < 0.0000001
 }
+
+
