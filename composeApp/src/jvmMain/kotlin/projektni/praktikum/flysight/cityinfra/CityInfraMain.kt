@@ -1,7 +1,9 @@
 package projektni.praktikum.flysight.cityinfra
 
 import java.nio.file.Files
+import java.nio.file.NoSuchFileException
 import java.nio.file.Path
+import kotlin.system.exitProcess
 
 fun parseCityInfra(source: String): CityProgram =
     Parser(Lexer(source).tokenize()).parseProgram()
@@ -13,20 +15,35 @@ fun cityInfraToGeoJson(source: String, validate: Boolean = true): String {
 }
 
 fun main(args: Array<String>) {
-    val source = if (args.isNotEmpty()) {
-        Files.readString(Path.of(args[0]))
-    } else {
-        demoProgram
-    }
+    try {
+        val source = if (args.isNotEmpty()) {
+            Files.readString(Path.of(args[0]))
+        } else {
+            demoProgram
+        }
 
-    val geoJson = cityInfraToGeoJson(source)
+        val geoJson = cityInfraToGeoJson(source)
 
-    if (args.size >= 2) {
-        Files.writeString(Path.of(args[1]), geoJson)
-        println("GeoJSON written to ${args[1]}")
-    } else {
-        println(geoJson)
+        if (args.size >= 2) {
+            Files.writeString(Path.of(args[1]), geoJson)
+            println("GeoJSON written to ${args[1]}")
+        } else {
+            println(geoJson)
+        }
+    } catch (e: LexException) {
+        fail("Lexer error: ${e.message}")
+    } catch (e: ParseException) {
+        fail("Parser error: ${e.message}")
+    } catch (e: SemanticException) {
+        fail("Semantic error: ${e.message}")
+    } catch (e: NoSuchFileException) {
+        fail("Input file not found: ${e.file}")
     }
+}
+
+private fun fail(message: String): Nothing {
+    System.err.println(message)
+    exitProcess(1)
 }
 
 private val demoProgram =
