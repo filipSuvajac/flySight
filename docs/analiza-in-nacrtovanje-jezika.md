@@ -167,14 +167,24 @@ sensor "Merilec PM10" kind air_quality at (15.647, 46.559) {
 }
 ```
 
-### Obmoƒçje namenske rabe
+### Most
 
-`zone` opisuje veƒçje obmoƒçje s predpisano namensko rabo, na primer stanovanjsko, industrijsko ali poslovno obmoƒçje.
+`bridge` opisuje most kot linijski infrastrukturni element, ki povezuje dve strani reke, ceste ali druge ovire. Vrsta mostu je podana z atributom `type`.
 
 ```cityinfra
-zone "Industrijska cona" use industrial {
-  polygon((15.660, 46.552), (15.670, 46.552), (15.670, 46.548), (15.660, 46.548));
-}
+bridge "Titov most" type road {
+  line((15.65125, 46.55635), (15.65125, 46.55375));
+};
+```
+
+### Kroûiöce
+
+`roundabout` opisuje kroûiöce kot kroûno prometno povröino. Zapis vsebuje tip kroûiöca in geometrijo `circle`, kjer je radij podan v kilometrih.
+
+```cityinfra
+roundabout "Krozisce Glavni trg" type road {
+  circle((15.646052858423616, 46.55736227751606), 0.016);
+};
 ```
 
 ## Geometrija
@@ -241,8 +251,8 @@ set("status", "planned");
 ## Pravila preverjanja
 
 1. Program ima natanko en korenski blok `city`.
-2. `road`, `water` in `utility` morajo imeti vsaj en ukaz `line`, `bend` ali `polyline`.
-3. `building`, `park` in `zone` morajo opisati zakljuƒçeno povr≈°ino z `box`, `polygon`, `circle` ali zaporedjem linij, kjer je zadnja toƒçka enaka prvi.
+2. `road`, `water`, `utility` in `bridge` morajo imeti vsaj en ukaz `line`, `bend` ali `polyline`.
+3. `building` in `park` morata opisati zakljuceno povröino z `box`, `polygon`, `circle` ali zaporedjem linij, kjer je zadnja tocka enaka prvi.
 4. `stop`, `poi` in `sensor` so toƒçkovni elementi in morajo imeti natanko eno koordinato za `at`.
 5. Imena elementov znotraj istega bloka morajo biti unikatna za isti tip elementa.
 6. ≈†tevilo nadstropij pri `building` mora biti pozitivno celo ≈°tevilo.
@@ -281,7 +291,8 @@ WHITESPACE = [ \t\r\n]+
               | <stop>
               | <poi>
               | <sensor>
-              | <zone>
+              | <bridge>
+              | <roundabout>
               | <metadata>
 
 <district> ::= "district" <string> "{" <city_items> "}"
@@ -303,7 +314,9 @@ WHITESPACE = [ \t\r\n]+
 <sensor> ::= "sensor" <string> "kind" <identifier> "at" <point> "{" <metadata_items> "}" ";"
            | "sensor" <string> "kind" <identifier> "at" <point> ";"
 
-<zone> ::= "zone" <string> "use" <identifier> "{" <area_commands> <metadata_items> "}" ";"
+<bridge> ::= "bridge" <string> "type" <identifier> "{" <path_commands> <metadata_items> "}" ";"
+
+<roundabout> ::= "roundabout" <string> "type" <identifier> "{" <circle> <metadata_items> "}" ";"
 
 <path_commands> ::= <path_command> <path_commands>
                   | <empty>
@@ -409,7 +422,7 @@ FIRST(<program>) = { city }
 FIRST(<city>) = { city }
 
 FIRST(<city_item>) = {
-  district, road, building, park, water, utility, stop, poi, sensor, zone, set
+  district, road, building, park, water, utility, bridge, roundabout, stop, poi, sensor, set
 }
 
 FIRST(<district>) = { district }
@@ -421,7 +434,8 @@ FIRST(<utility>) = { utility }
 FIRST(<stop>) = { stop }
 FIRST(<poi>) = { poi }
 FIRST(<sensor>) = { sensor }
-FIRST(<zone>) = { zone }
+FIRST(<bridge>) = { bridge }
+FIRST(<roundabout>) = { roundabout }
 FIRST(<metadata>) = { set }
 
 FIRST(<path_command>) = { line, bend, polyline }
@@ -453,47 +467,51 @@ FOLLOW(<city>) = { EOF }
 
 FOLLOW(<city_items>) = { "}" }
 FOLLOW(<city_item>) = {
-  district, road, building, park, water, utility, stop, poi, sensor, zone, set, "}"
+  district, road, building, park, water, utility, bridge, roundabout, stop, poi, sensor, set, "}"
 }
 
 FOLLOW(<district>) = {
-  district, road, building, park, water, utility, stop, poi, sensor, zone, set, "}"
+  district, road, building, park, water, utility, bridge, roundabout, stop, poi, sensor, set, "}"
 }
 
 FOLLOW(<road>) = {
-  district, road, building, park, water, utility, stop, poi, sensor, zone, set, "}"
+  district, road, building, park, water, utility, bridge, roundabout, stop, poi, sensor, set, "}"
 }
 
 FOLLOW(<building>) = {
-  district, road, building, park, water, utility, stop, poi, sensor, zone, set, "}"
+  district, road, building, park, water, utility, bridge, roundabout, stop, poi, sensor, set, "}"
 }
 
 FOLLOW(<park>) = {
-  district, road, building, park, water, utility, stop, poi, sensor, zone, set, "}"
+  district, road, building, park, water, utility, bridge, roundabout, stop, poi, sensor, set, "}"
 }
 
 FOLLOW(<water>) = {
-  district, road, building, park, water, utility, stop, poi, sensor, zone, set, "}"
+  district, road, building, park, water, utility, bridge, roundabout, stop, poi, sensor, set, "}"
 }
 
 FOLLOW(<utility>) = {
-  district, road, building, park, water, utility, stop, poi, sensor, zone, set, "}"
+  district, road, building, park, water, utility, bridge, roundabout, stop, poi, sensor, set, "}"
 }
 
 FOLLOW(<stop>) = {
-  district, road, building, park, water, utility, stop, poi, sensor, zone, set, "}"
+  district, road, building, park, water, utility, bridge, roundabout, stop, poi, sensor, set, "}"
 }
 
 FOLLOW(<poi>) = {
-  district, road, building, park, water, utility, stop, poi, sensor, zone, set, "}"
+  district, road, building, park, water, utility, bridge, roundabout, stop, poi, sensor, set, "}"
 }
 
 FOLLOW(<sensor>) = {
-  district, road, building, park, water, utility, stop, poi, sensor, zone, set, "}"
+  district, road, building, park, water, utility, bridge, roundabout, stop, poi, sensor, set, "}"
 }
 
-FOLLOW(<zone>) = {
-  district, road, building, park, water, utility, stop, poi, sensor, zone, set, "}"
+FOLLOW(<bridge>) = {
+  district, road, building, park, water, utility, bridge, roundabout, stop, poi, sensor, set, "}"
+}
+
+FOLLOW(<roundabout>) = {
+  district, road, building, park, water, utility, bridge, roundabout, stop, poi, sensor, set, "}"
 }
 
 FOLLOW(<path_commands>) = { set, "}" }
@@ -661,3 +679,6 @@ city "Napaka" {
 ```
 
 Rezultat: program ni semantiƒçno veljaven, ker stavba nima ukaza za povr≈°insko geometrijo.
+
+
+
