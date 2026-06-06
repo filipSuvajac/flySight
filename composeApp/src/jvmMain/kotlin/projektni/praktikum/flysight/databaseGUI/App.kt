@@ -24,6 +24,7 @@ import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.AlertDialog
 import androidx.compose.material.Button
+import androidx.compose.material.Checkbox
 import androidx.compose.material.Divider
 import androidx.compose.material.DropdownMenu
 import androidx.compose.material.DropdownMenuItem
@@ -46,6 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import flysight.composeapp.generated.resources.Res
@@ -58,6 +60,7 @@ import kotlinx.coroutines.withContext
 import org.jetbrains.compose.resources.painterResource
 import projektni.praktikum.flysight.databaseGUI.data.Bird
 import projektni.praktikum.flysight.databaseGUI.data.BirdFamily
+import projektni.praktikum.flysight.databaseGUI.data.EbirdObservation
 import projektni.praktikum.flysight.databaseGUI.data.FlySightApiClient
 import projektni.praktikum.flysight.databaseGUI.data.FlySightRepository
 import projektni.praktikum.flysight.databaseGUI.data.GeneratorSettings
@@ -66,9 +69,12 @@ import projektni.praktikum.flysight.databaseGUI.data.TableData
 private enum class Screen(val title: String) {
     Database("Database"),
     Scraper("Scraper"),
+    Ebird("eBird"),
     Generator("Generator"),
     Service("Web service")
 }
+
+private const val DatabaseCellLimit = 90
 
 @Composable
 fun App() {
@@ -76,7 +82,7 @@ fun App() {
         val repository = remember { FlySightRepository() }
         var screen by remember { mutableStateOf(Screen.Database) }
         var status by remember { mutableStateOf("Ready") }
-        var apiBaseUrl by remember { mutableStateOf("http://localhost:3000") }
+        var apiBaseUrl by remember { mutableStateOf("http://localhost") }
         var authToken by remember { mutableStateOf("") }
         var authEmail by remember { mutableStateOf("") }
 
@@ -97,6 +103,7 @@ fun App() {
                     when (screen) {
                         Screen.Database -> DatabaseScreen(repository, apiBaseUrl, authToken, onStatus = { status = it })
                         Screen.Scraper -> ScraperScreen(repository, apiBaseUrl, authToken, onStatus = { status = it })
+                        Screen.Ebird -> EbirdScreen(repository, apiBaseUrl, authToken, onStatus = { status = it })
                         Screen.Generator -> GeneratorScreen(repository, apiBaseUrl, authToken, onStatus = { status = it })
                         Screen.Service -> ServiceScreen(
                             repository = repository,
@@ -156,7 +163,7 @@ private fun DatabaseScreen(
 
     Column(Modifier.fillMaxSize()) {
         Row(
-            Modifier.fillMaxWidth(),
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -313,11 +320,16 @@ private fun DynamicTable(
             LazyColumn(Modifier.fillMaxHeight()) {
                 items(table.rows, key = { it["id"].orEmpty() }) { row ->
                     Row(
-                        Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                        Modifier.fillMaxWidth().padding(horizontal = 8.dp ,vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         table.schema.columns.forEach { column ->
-                            Text(row[column].orEmpty(), modifier = Modifier.width(170.dp).padding(end = 8.dp))
+                            Text(
+                                row[column].orEmpty().limitForCell(),
+                                modifier = Modifier.width(170.dp).padding(end = 12.dp),
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
 
                         Row(Modifier.width(120.dp)) {
@@ -349,6 +361,11 @@ private fun DynamicTable(
             modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth()
         )
     }
+}
+
+private fun String.limitForCell(limit: Int = DatabaseCellLimit): String {
+    val clean = replace("\n", " ").replace(Regex("\\s+"), " ").trim()
+    return if (clean.length <= limit) clean else clean.take(limit).trimEnd() + "..."
 }
 
 @Composable
@@ -420,12 +437,15 @@ private fun ScraperScreen(
     }
 
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
                 label = { Text("Filter scraped birds") },
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.width(360.dp)
             )
             Spacer(Modifier.width(12.dp))
             Button(onClick = { sortBy = "name" }) { Text("Name") }
@@ -485,6 +505,237 @@ private fun ScrapedBirdList(birds: List<Bird>) {
 }
 
 @Composable
+private fun EbirdScreen(
+    repository: FlySightRepository,
+    apiBaseUrl: String,
+    authToken: String,
+    onStatus: (String) -> Unit
+) {
+    var observations by remember { mutableStateOf<List<EbirdObservation>>(emptyList()) }
+    var speciesFilter by remember { mutableStateOf("") }
+    var locationFilter by remember { mutableStateOf("") }
+    var dateFilter by remember { mutableStateOf("") }
+    var sourceFilter by remember { mutableStateOf("") }
+    var recentDays by remember { mutableStateOf("30") }
+    var maxResults by remember { mutableStateOf("500") }
+    var minCount by remember { mutableStateOf("") }
+    var onlyWithCoordinates by remember { mutableStateOf(false) }
+    var statusFilter by remember { mutableStateOf("all") }
+    var sortBy by remember { mutableStateOf("date") }
+    val scope = rememberCoroutineScope()
+
+    val filteredObservations = remember(
+        observations,
+        speciesFilter,
+        locationFilter,
+        dateFilter,
+        sourceFilter,
+        minCount,
+        onlyWithCoordinates,
+        statusFilter,
+        sortBy
+    ) {
+        val species = speciesFilter.trim().lowercase()
+        val location = locationFilter.trim().lowercase()
+        val date = dateFilter.trim()
+        val source = sourceFilter.trim().lowercase()
+        val minimumCount = minCount.toIntOrNull()
+
+        val filtered = observations.filter { observation ->
+            val observedDate = observation.observedAt.take(10)
+            val count = observation.count ?: 0
+
+            val speciesMatch = species.isBlank() ||
+                observation.slovenianName.lowercase().contains(species) ||
+                observation.commonName.lowercase().contains(species) ||
+                observation.scientificName.lowercase().contains(species) ||
+                observation.speciesCode.lowercase().contains(species)
+
+            val locationMatch = location.isBlank() ||
+                observation.city.lowercase().contains(location) ||
+                observation.locationName.lowercase().contains(location) ||
+                observation.region.lowercase().contains(location)
+
+            val dateMatch = date.isBlank() || observedDate == date
+            val sourceMatch = source.isBlank() || "ebird".contains(source)
+            val countMatch = minimumCount == null || count >= minimumCount
+            val coordinateMatch = !onlyWithCoordinates || observation.latitude != null && observation.longitude != null
+            val statusMatch = when (statusFilter) {
+                "reviewed" -> observation.reviewed
+                "valid" -> observation.valid
+                "pending" -> !observation.valid && !observation.reviewed
+                else -> true
+            }
+
+            speciesMatch && locationMatch && dateMatch && sourceMatch && countMatch && coordinateMatch && statusMatch
+        }
+
+        when (sortBy) {
+            "species" -> filtered.sortedBy { it.slovenianName.ifBlank { it.commonName } }
+            "location" -> filtered.sortedBy { it.locationName }
+            "count" -> filtered.sortedByDescending { it.count ?: 0 }
+            else -> filtered.sortedByDescending { it.observedAt }
+        }
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Field("Recent days", recentDays, { recentDays = it }, Modifier.width(130.dp))
+            Field("Max results", maxResults, { maxResults = it }, Modifier.width(140.dp))
+            Button(
+                onClick = {
+                    scope.launch {
+                        onStatus("Fetching eBird observations...")
+                        val result = withContext(Dispatchers.IO) {
+                            FlySightApiClient(apiBaseUrl, authToken).fetchRecentEbirdObservations(
+                                days = recentDays.toIntOrNull() ?: 30,
+                                maxResults = maxResults.toIntOrNull() ?: 500
+                            )
+                        }
+                        result.fold(
+                            onSuccess = {
+                                observations = it
+                                onStatus("Fetched ${it.size} eBird observations")
+                            },
+                            onFailure = { onStatus("eBird fetch failed: ${it.message}") }
+                        )
+                    }
+                }
+            ) {
+                Text("Fetch eBird")
+            }
+            Spacer(Modifier.width(8.dp))
+            Button(
+                enabled = filteredObservations.isNotEmpty(),
+                onClick = {
+                    scope.launch {
+                        onStatus("Importing filtered eBird observations...")
+                        val message = withContext(Dispatchers.IO) {
+                            FlySightApiClient(apiBaseUrl, authToken).importEbirdObservations(filteredObservations).fold(
+                                onSuccess = {
+                                    refreshAllTables(repository, apiBaseUrl, authToken)
+                                    "Imported eBird observations: $it"
+                                },
+                                onFailure = { "eBird import failed: ${it.message}" }
+                            )
+                        }
+                        onStatus(message)
+                    }
+                }
+            ) {
+                Text("Import filtered")
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
+
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Field("Species", speciesFilter, { speciesFilter = it }, Modifier.width(230.dp))
+            Field("Location", locationFilter, { locationFilter = it }, Modifier.width(230.dp))
+            Field("Date YYYY-MM-DD", dateFilter, { dateFilter = it }, Modifier.width(180.dp))
+            Field("Source", sourceFilter, { sourceFilter = it }, Modifier.width(120.dp))
+            Field("Min count", minCount, { minCount = it }, Modifier.width(130.dp))
+        }
+
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Status:", fontWeight = FontWeight.Bold)
+            Spacer(Modifier.width(8.dp))
+            Button(onClick = { statusFilter = "all" }) { Text("All") }
+            Spacer(Modifier.width(6.dp))
+            Button(onClick = { statusFilter = "valid" }) { Text("Valid") }
+            Spacer(Modifier.width(6.dp))
+            Button(onClick = { statusFilter = "reviewed" }) { Text("Reviewed") }
+            Spacer(Modifier.width(6.dp))
+            Button(onClick = { statusFilter = "pending" }) { Text("Pending") }
+            Spacer(Modifier.width(18.dp))
+            Checkbox(checked = onlyWithCoordinates, onCheckedChange = { onlyWithCoordinates = it })
+            Text("With coordinates")
+            Spacer(Modifier.width(18.dp))
+            Text("Sort:", fontWeight = FontWeight.Bold)
+            Spacer(Modifier.width(8.dp))
+            Button(onClick = { sortBy = "date" }) { Text("Date") }
+            Spacer(Modifier.width(6.dp))
+            Button(onClick = { sortBy = "species" }) { Text("Species") }
+            Spacer(Modifier.width(6.dp))
+            Button(onClick = { sortBy = "location" }) { Text("Location") }
+            Spacer(Modifier.width(6.dp))
+            Button(onClick = { sortBy = "count" }) { Text("Count") }
+        }
+
+        Spacer(Modifier.height(10.dp))
+        Text("Showing ${filteredObservations.size} of ${observations.size} eBird observations")
+        Spacer(Modifier.height(8.dp))
+        EbirdObservationTable(filteredObservations)
+    }
+}
+
+@Composable
+private fun EbirdObservationTable(observations: List<EbirdObservation>) {
+    val horizontalScroll = rememberScrollState()
+
+    Box(Modifier.fillMaxSize().background(Color.White).border(1.dp, Color(0xFFE0E0E0))) {
+        Column(Modifier.fillMaxSize().horizontalScroll(horizontalScroll).padding(8.dp)) {
+            Row(Modifier.fillMaxWidth().background(Color(0xFFEEF2F4)).padding(8.dp)) {
+                Text("Species", modifier = Modifier.width(240.dp), fontWeight = FontWeight.Bold)
+                Text("Location", modifier = Modifier.width(260.dp), fontWeight = FontWeight.Bold)
+                Text("Date", modifier = Modifier.width(150.dp), fontWeight = FontWeight.Bold)
+                Text("Count", modifier = Modifier.width(80.dp), fontWeight = FontWeight.Bold)
+                Text("Status", modifier = Modifier.width(110.dp), fontWeight = FontWeight.Bold)
+                Text("Coordinates", modifier = Modifier.width(190.dp), fontWeight = FontWeight.Bold)
+            }
+
+            Divider()
+
+            LazyColumn(Modifier.fillMaxHeight()) {
+                items(observations) { observation ->
+                    Row(Modifier.fillMaxWidth().padding(vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.width(240.dp).padding(end = 8.dp)) {
+                            Text(observation.slovenianName.ifBlank { observation.commonName }, fontWeight = FontWeight.Bold)
+                            Text(observation.commonName, color = Color(0xFF455A64))
+                            Text(observation.scientificName.ifBlank { observation.speciesCode }, color = Color(0xFF607D8B))
+                        }
+                        Column(Modifier.width(260.dp).padding(end = 8.dp)) {
+                            Text(observation.city.ifBlank { observation.locationName }, fontWeight = FontWeight.Bold)
+                            Text(observation.locationName, color = Color(0xFF455A64))
+                            Text(observation.region, color = Color(0xFF607D8B))
+                        }
+                        Text(observation.observedAt, modifier = Modifier.width(150.dp).padding(end = 8.dp))
+                        Text((observation.count ?: 0).toString(), modifier = Modifier.width(80.dp))
+                        Text(ebirdStatus(observation), modifier = Modifier.width(110.dp))
+                        Text(
+                            "${observation.latitude ?: "?"}, ${observation.longitude ?: "?"}",
+                            modifier = Modifier.width(190.dp)
+                        )
+                    }
+                    Divider(color = Color(0xFFF1F1F1))
+                }
+            }
+        }
+
+        HorizontalScrollbar(
+            adapter = rememberScrollbarAdapter(horizontalScroll),
+            modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth()
+        )
+    }
+}
+
+private fun ebirdStatus(observation: EbirdObservation): String =
+    when {
+        observation.reviewed -> "Reviewed"
+        observation.valid -> "Valid"
+        else -> "Pending"
+    }
+
+@Composable
 private fun GeneratorScreen(
     repository: FlySightRepository,
     apiBaseUrl: String,
@@ -501,16 +752,16 @@ private fun GeneratorScreen(
     val scope = rememberCoroutineScope()
 
     Column(Modifier.fillMaxSize().background(Color.White).padding(16.dp)) {
-        Row(Modifier.fillMaxWidth()) {
-            Field("Count", count, { count = it }, Modifier.weight(1f))
-            Field("Min latitude", minLat, { minLat = it }, Modifier.weight(1f))
-            Field("Max latitude", maxLat, { maxLat = it }, Modifier.weight(1f))
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+            Field("Count", count, { count = it }, Modifier.width(130.dp))
+            Field("Min latitude", minLat, { minLat = it }, Modifier.width(160.dp))
+            Field("Max latitude", maxLat, { maxLat = it }, Modifier.width(160.dp))
         }
-        Row(Modifier.fillMaxWidth()) {
-            Field("Min longitude", minLon, { minLon = it }, Modifier.weight(1f))
-            Field("Max longitude", maxLon, { maxLon = it }, Modifier.weight(1f))
-            Field("Min count", minObserved, { minObserved = it }, Modifier.weight(1f))
-            Field("Max count", maxObserved, { maxObserved = it }, Modifier.weight(1f))
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+            Field("Min longitude", minLon, { minLon = it }, Modifier.width(160.dp))
+            Field("Max longitude", maxLon, { maxLon = it }, Modifier.width(160.dp))
+            Field("Min count", minObserved, { minObserved = it }, Modifier.width(140.dp))
+            Field("Max count", maxObserved, { maxObserved = it }, Modifier.width(140.dp))
         }
 
         Spacer(Modifier.height(16.dp))
@@ -574,13 +825,19 @@ private fun ServiceScreen(
 
         Spacer(Modifier.height(12.dp))
 
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Field("Email", email, { email = it }, Modifier.weight(1f))
-            Field("Name", name, { name = it }, Modifier.weight(1f))
-            Field("Password", password, { password = it }, Modifier.weight(1f))
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Field("Email", email, { email = it }, Modifier.width(260.dp))
+            Field("Name", name, { name = it }, Modifier.width(220.dp))
+            Field("Password", password, { password = it }, Modifier.width(220.dp))
         }
 
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Button(
                 onClick = {
                     scope.launch {
@@ -629,7 +886,7 @@ private fun ServiceScreen(
 
         Spacer(Modifier.height(12.dp))
 
-        Row {
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
             Button(
                 onClick = {
                     scope.launch {

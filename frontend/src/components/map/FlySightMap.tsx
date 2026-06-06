@@ -2,12 +2,16 @@ import { useEffect, useMemo, useState } from "react";
 import L from "leaflet";
 import { MapContainer, Marker, Popup, TileLayer } from "react-leaflet";
 import { fetchRecentEbirdObservations } from "../../api";
+import { filterEbirdObservations, type ObservationFilters } from "../../observations/filters";
 import type { EbirdObservation } from "../../types";
 import { formatDateTime } from "../ebird/format";
 import birdIconUrl from "../../assets/bird-fill-svgrepo-com.svg";
 
 type FlySightMapProps = {
   token: string;
+  filters: ObservationFilters;
+  recentDays: string;
+  onSelectObservation: (observation: EbirdObservation) => void;
 };
 
 function hasCoordinates(observation: EbirdObservation): observation is EbirdObservation & {
@@ -29,7 +33,12 @@ const birdMarkerIcon = L.divIcon({
   popupAnchor: [0, -40]
 });
 
-export function FlySightMap({ token }: FlySightMapProps) {
+export function FlySightMap({
+  token,
+  filters,
+  recentDays,
+  onSelectObservation
+}: FlySightMapProps) {
   const [observations, setObservations] = useState<EbirdObservation[]>([]);
   const [selectedImage, setSelectedImage] = useState<{ src: string; alt: string } | null>(null);
   const [status, setStatus] = useState("Loading eBird sightings...");
@@ -41,7 +50,7 @@ export function FlySightMap({ token }: FlySightMapProps) {
     setStatus("Loading eBird sightings...");
     setError("");
 
-    fetchRecentEbirdObservations(token)
+    fetchRecentEbirdObservations(token, Number(recentDays) || 30)
       .then((nextObservations) => {
         if (cancelled) return;
         setObservations(nextObservations);
@@ -57,9 +66,13 @@ export function FlySightMap({ token }: FlySightMapProps) {
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [recentDays, token]);
 
-  const markers = useMemo(() => observations.filter(hasCoordinates), [observations]);
+  const filteredObservations = useMemo(
+    () => filterEbirdObservations(observations, filters),
+    [filters, observations]
+  );
+  const markers = useMemo(() => filteredObservations.filter(hasCoordinates), [filteredObservations]);
 
   return (
     <section className="map-card">
@@ -67,6 +80,7 @@ export function FlySightMap({ token }: FlySightMapProps) {
         <div>
           <span>Live eBird view</span>
           <h2>Slovenia sightings map</h2>
+          <p>{markers.length} filtered markers from {observations.length} loaded observations</p>
           {error && <p className="map-error">{error}</p>}
         </div>
         <div className="map-pulse">{markers.length} mapped</div>
@@ -81,6 +95,9 @@ export function FlySightMap({ token }: FlySightMapProps) {
           <Marker
             icon={birdMarkerIcon}
             key={observation.id}
+            eventHandlers={{
+              click: () => onSelectObservation(observation)
+            }}
             position={[observation.latitude, observation.longitude]}
           >
             <Popup>

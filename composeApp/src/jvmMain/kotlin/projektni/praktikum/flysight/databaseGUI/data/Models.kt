@@ -44,6 +44,25 @@ data class GeneratorSettings(
     val maxObserved: Int
 )
 
+@Serializable
+data class EbirdObservation(
+    val id: String,
+    val speciesCode: String = "",
+    val commonName: String = "",
+    val slovenianName: String = "",
+    val imageUrl: String = "",
+    val scientificName: String = "",
+    val locationName: String = "",
+    val city: String = "",
+    val observedAt: String = "",
+    val count: Int? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val region: String = "",
+    val valid: Boolean = false,
+    val reviewed: Boolean = false
+)
+
 val flySightSchemas = listOf(
     TableSchema(
         name = "bird_family",

@@ -102,30 +102,6 @@ export async function ensureSchema() {
 
 async function seedDemoData() {
   await query(`
-    insert into bird_family (id, name, latin_name, slug)
-    values
-      (1, 'Brglezi', 'Sittidae', 'brglezi'),
-      (2, 'Drozgi', 'Turdidae', 'drozgi')
-    on conflict (id) do nothing;
-
-    insert into bird_info (id, family_id, name, latin_name, description, image_url, source)
-    values
-      (1, 1, 'Brglez', 'Sitta europaea', 'Ptica iz skupine brglezov.', '', 'seed'),
-      (2, 2, 'Kos', 'Turdus merula', 'Pogosta ptica v Sloveniji.', '', 'seed')
-    on conflict (id) do nothing;
-
-    insert into location (id, name, latitude, longitude)
-    values
-      (1, 'Maribor', 46.55, 15.65),
-      (2, 'Ljubljana', 46.05, 14.51)
-    on conflict (id) do nothing;
-
-    insert into observation (id, bird_id, location_id, observed_count, event_date, source)
-    values
-      (1, 1, 1, 3, '2026-05-02', 'seed'),
-      (2, 2, 2, 5, '2026-05-01', 'seed')
-    on conflict (id) do nothing;
-
     insert into data_source_settings (key, name, enabled, region, max_results, recent_days, settings)
     values
       ('ebird', 'eBird API', true, 'SI', 500, 30, '{"description":"Recent observations and hotspots from eBird"}'::jsonb),
@@ -133,10 +109,5 @@ async function seedDemoData() {
       ('generated', 'Generated data', true, 'SI', 100, 365, '{"description":"Synthetic observations for demos"}'::jsonb),
       ('cityinfra', 'CityInfra GeoJSON', true, 'SI', 100, 30, '{"description":"GeoJSON exported from the CityInfra DSL"}'::jsonb)
     on conflict (key) do nothing;
-
-    select setval(pg_get_serial_sequence('bird_family', 'id'), greatest((select max(id) from bird_family), 1));
-    select setval(pg_get_serial_sequence('bird_info', 'id'), greatest((select max(id) from bird_info), 1));
-    select setval(pg_get_serial_sequence('location', 'id'), greatest((select max(id) from location), 1));
-    select setval(pg_get_serial_sequence('observation', 'id'), greatest((select max(id) from observation), 1));
   `);
 }
