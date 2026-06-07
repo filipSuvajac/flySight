@@ -39,7 +39,7 @@ export function AuthLanding({
           <StatusPill health={health} />
           <h1>FlySight</h1>
           <p>
-            Is it a bird? Is it a plane?
+            "Tame birds sing of freedom. Wild birds fly." — John Lennon
           </p>
         </div>
 
