@@ -39,7 +39,7 @@ export function AuthLanding({
           <StatusPill health={health} />
           <h1>FlySight</h1>
           <p>
-            Create your profile and access the bird observation workspace connected to the FlySight REST API.
+            Is it a bird? Is it a plane?
           </p>
         </div>
 
