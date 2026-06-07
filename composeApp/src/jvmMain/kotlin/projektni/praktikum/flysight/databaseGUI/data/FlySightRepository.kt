@@ -1,5 +1,6 @@
 package projektni.praktikum.flysight.databaseGUI.data
 
+import androidx.compose.runtime.mutableStateListOf
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.JsonArray
@@ -27,7 +28,7 @@ class FlySightRepository {
     }
 
     val tables: MutableList<TableData> = flySightSchemas.map { schema ->
-        TableData(schema, mutableListOf())
+        TableData(schema, mutableStateListOf())
     }.toMutableList()
 
     fun table(name: String): TableData = tables.first { it.schema.name == name }

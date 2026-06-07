@@ -1,5 +1,6 @@
 package projektni.praktikum.flysight.databaseGUI.data
 
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -30,7 +31,7 @@ data class TableSchema(
 
 data class TableData(
     val schema: TableSchema,
-    val rows: MutableList<MutableMap<String, String>>
+    val rows: SnapshotStateList<MutableMap<String, String>>
 )
 
 @Serializable

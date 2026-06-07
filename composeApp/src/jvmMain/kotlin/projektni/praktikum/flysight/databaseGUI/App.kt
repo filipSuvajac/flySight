@@ -951,11 +951,22 @@ private fun ServiceScreen(
     }
 }
 
-private fun refreshAllTables(repository: FlySightRepository, apiBaseUrl: String, authToken: String): String {
+private suspend fun refreshAllTables(repository: FlySightRepository, apiBaseUrl: String, authToken: String): String {
     val api = FlySightApiClient(apiBaseUrl, authToken)
-    repository.tables.forEach { table ->
-        val rows = api.fetchRows(table.schema.name).getOrElse { return "Refresh failed: ${it.message}" }
-        repository.replaceRows(table.schema.name, rows)
+    val tableRows = withContext(Dispatchers.IO) {
+        repository.tables.associate { table ->
+            val rows = api.fetchRows(table.schema.name).getOrElse {
+                return@withContext Result.failure<Map<String, List<Map<String, String>>>>(it)
+            }
+            table.schema.name to rows
+        }
+            .let { Result.success(it) }
+    }.getOrElse { return "Refresh failed: ${it.message}" }
+
+    withContext(Dispatchers.Main) {
+        tableRows.forEach { (tableName, rows) ->
+            repository.replaceRows(tableName, rows)
+        }
     }
     return "Loaded database tables from API"
 }
