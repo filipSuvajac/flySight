@@ -180,8 +180,8 @@ class FlySightApiClient(
     private val mediaType = "application/json; charset=utf-8".toMediaType()
 
     fun healthCheck(): Result<String> = runCatching {
-        val request = requestBuilder("/")
-            .url("${baseUrl.trimEnd('/')}/")
+        val request = requestBuilder("/health")
+            .url("${baseUrl.trimEnd('/')}/health")
             .get()
             .build()
 

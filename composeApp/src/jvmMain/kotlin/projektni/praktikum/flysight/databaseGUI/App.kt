@@ -435,6 +435,13 @@ private fun ScraperScreen(
             else -> filtered.sortedBy { it.name }
         }
     }
+    val filteredFamilies = remember(families, birds) {
+        val birdKeys = birds.map { it.name to it.latinName }.toSet()
+        families.mapNotNull { family ->
+            val matchingBirds = family.birds.filter { (it.name to it.latinName) in birdKeys }
+            if (matchingBirds.isEmpty()) null else family.copy(birds = matchingBirds)
+        }
+    }
 
     Column(Modifier.fillMaxSize()) {
         Row(
@@ -460,7 +467,7 @@ private fun ScraperScreen(
                     scope.launch {
                         onStatus("Importing scraped DOPPS data...")
                         val message = withContext(Dispatchers.IO) {
-                            FlySightApiClient(apiBaseUrl, authToken).importDoppsFamilies(families).fold(
+                            FlySightApiClient(apiBaseUrl, authToken).importDoppsFamilies(filteredFamilies).fold(
                                 onSuccess = {
                                     refreshAllTables(repository, apiBaseUrl, authToken)
                                     "Imported scraped data: $it"
@@ -478,6 +485,7 @@ private fun ScraperScreen(
 
         Spacer(Modifier.height(12.dp))
         Text("Loaded ${families.size} families and ${families.sumOf { it.birds.size }} birds from ptice_slovenije.json")
+        Text("Showing ${birds.size} filtered birds in ${filteredFamilies.size} families")
         Spacer(Modifier.height(8.dp))
         ScrapedBirdList(birds)
     }
