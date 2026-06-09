@@ -1,6 +1,8 @@
 package projektni.praktikum.flysight.databaseGUI.data
 
+import androidx.compose.runtime.mutableStateListOf
 import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -26,7 +28,7 @@ class FlySightRepository {
     }
 
     val tables: MutableList<TableData> = flySightSchemas.map { schema ->
-        TableData(schema, seedRows(schema).toMutableList())
+        TableData(schema, mutableStateListOf())
     }.toMutableList()
 
     fun table(name: String): TableData = tables.first { it.schema.name == name }
@@ -156,41 +158,6 @@ class FlySightRepository {
         }
     }
 
-    private fun seedRows(schema: TableSchema): List<MutableMap<String, String>> =
-        when (schema.name) {
-            "bird_family" -> listOf(
-                mutableMapOf("id" to "1", "name" to "Brglezi", "latin_name" to "Sittidae", "slug" to "brglezi"),
-                mutableMapOf("id" to "2", "name" to "Drozgi", "latin_name" to "Turdidae", "slug" to "drozgi")
-            )
-            "bird_info" -> listOf(
-                mutableMapOf(
-                    "id" to "1",
-                    "name" to "Brglez",
-                    "latin_name" to "Sitta europaea",
-                    "family_id" to "1",
-                    "description" to "Ptica iz skupine brglezov.",
-                    "image_url" to ""
-                ),
-                mutableMapOf(
-                    "id" to "2",
-                    "name" to "Kos",
-                    "latin_name" to "Turdus merula",
-                    "family_id" to "2",
-                    "description" to "Pogosta ptica v Sloveniji.",
-                    "image_url" to ""
-                )
-            )
-            "location" -> listOf(
-                mutableMapOf("id" to "1", "name" to "Maribor", "latitude" to "46.55", "longitude" to "15.65"),
-                mutableMapOf("id" to "2", "name" to "Ljubljana", "latitude" to "46.05", "longitude" to "14.51")
-            )
-            "observation" -> listOf(
-                mutableMapOf("id" to "1", "bird_id" to "1", "location_id" to "1", "observed_count" to "3", "event_date" to "2026-05-02", "source" to "demo"),
-                mutableMapOf("id" to "2", "bird_id" to "2", "location_id" to "2", "observed_count" to "5", "event_date" to "2026-05-01", "source" to "demo")
-            )
-            else -> emptyList()
-        }
-
     private fun nextId(table: TableData): Int =
         (table.rows.mapNotNull { it["id"]?.toIntOrNull() }.maxOrNull() ?: 0) + 1
 
@@ -213,8 +180,8 @@ class FlySightApiClient(
     private val mediaType = "application/json; charset=utf-8".toMediaType()
 
     fun healthCheck(): Result<String> = runCatching {
-        val request = requestBuilder("/")
-            .url("${baseUrl.trimEnd('/')}/")
+        val request = requestBuilder("/health")
+            .url("${baseUrl.trimEnd('/')}/health")
             .get()
             .build()
 
@@ -270,6 +237,29 @@ class FlySightApiClient(
 
     fun importDoppsFamilies(families: List<BirdFamily>): Result<String> = runCatching {
         postJson("/api/import/dopps", json.encodeToString(families))
+    }
+
+    fun fetchRecentEbirdObservations(days: Int, maxResults: Int): Result<List<EbirdObservation>> = runCatching {
+        val safeDays = days.coerceIn(1, 30)
+        val safeMaxResults = maxResults.coerceIn(1, 10000)
+        val request = requestBuilder("/api/ebird/recent")
+            .url("${baseUrl.trimEnd()}/api/ebird/recent?days=$safeDays&maxResults=$safeMaxResults")
+            .get()
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) error("HTTP ${response.code}: ${response.body?.string().orEmpty()}")
+            val payload = response.body?.string().orEmpty()
+            val obj = json.parseToJsonElement(payload) as? JsonObject ?: return@use emptyList()
+            val observations = obj["observations"] as? JsonArray ?: return@use emptyList()
+            observations.mapNotNull { element ->
+                runCatching { json.decodeFromJsonElement(EbirdObservation.serializer(), element) }.getOrNull()
+            }
+        }
+    }
+
+    fun importEbirdObservations(observations: List<EbirdObservation>): Result<String> = runCatching {
+        postJson("/api/import/ebird", json.encodeToString(mapOf("observations" to observations)))
     }
 
     fun generateObservations(settings: GeneratorSettings): Result<String> = runCatching {

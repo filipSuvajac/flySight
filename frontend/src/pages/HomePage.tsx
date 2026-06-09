@@ -53,7 +53,12 @@ export function HomePage({ token, counts, error }: HomePageProps) {
       </div>
 
       <section className="explore-layout">
-        <FlySightMap token={token} />
+        <FlySightMap
+          token={token}
+          filters={filters}
+          recentDays={recentDays}
+          onSelectObservation={setSelectedObservation}
+        />
         <ExploreSidePanel
           counts={counts}
           error={error}

@@ -1,5 +1,6 @@
 package projektni.praktikum.flysight.databaseGUI.data
 
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -30,7 +31,7 @@ data class TableSchema(
 
 data class TableData(
     val schema: TableSchema,
-    val rows: MutableList<MutableMap<String, String>>
+    val rows: SnapshotStateList<MutableMap<String, String>>
 )
 
 @Serializable
@@ -42,6 +43,25 @@ data class GeneratorSettings(
     val maxLongitude: Double,
     val minObserved: Int,
     val maxObserved: Int
+)
+
+@Serializable
+data class EbirdObservation(
+    val id: String,
+    val speciesCode: String = "",
+    val commonName: String = "",
+    val slovenianName: String = "",
+    val imageUrl: String = "",
+    val scientificName: String = "",
+    val locationName: String = "",
+    val city: String = "",
+    val observedAt: String = "",
+    val count: Int? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val region: String = "",
+    val valid: Boolean = false,
+    val reviewed: Boolean = false
 )
 
 val flySightSchemas = listOf(
