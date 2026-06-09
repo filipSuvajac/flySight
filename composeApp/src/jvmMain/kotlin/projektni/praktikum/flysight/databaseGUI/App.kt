@@ -147,11 +147,15 @@ private fun DatabaseScreen(
     onStatus: (String) -> Unit
 ) {
     var selectedTable by remember { mutableStateOf(repository.tables.first()) }
+    var databaseQuery by remember { mutableStateOf("") }
     var expanded by remember { mutableStateOf(false) }
     var editingRow by remember { mutableStateOf<Map<String, String>?>(null) }
     var showForm by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<Map<String, String>?>(null) }
     val scope = rememberCoroutineScope()
+    val visibleRows = selectedTable.rows.filter { row ->
+        row.matchesDatabaseQuery(databaseQuery, selectedTable.schema.columns)
+    }
 
     LaunchedEffect(apiBaseUrl, authToken) {
         onStatus("Loading database tables...")
@@ -176,6 +180,7 @@ private fun DatabaseScreen(
                         DropdownMenuItem(
                             onClick = {
                                 selectedTable = table
+                                databaseQuery = ""
                                 expanded = false
                             }
                         ) {
@@ -217,8 +222,24 @@ private fun DatabaseScreen(
         }
 
         Spacer(Modifier.height(12.dp))
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = databaseQuery,
+                onValueChange = { databaseQuery = it },
+                label = { Text("Search database rows") },
+                modifier = Modifier.width(360.dp)
+            )
+            Spacer(Modifier.width(12.dp))
+            Text("Showing ${visibleRows.size} of ${selectedTable.rows.size} rows")
+        }
+
+        Spacer(Modifier.height(12.dp))
         DynamicTable(
             table = selectedTable,
+            rows = visibleRows,
             onEdit = { row ->
                 editingRow = row.toMap()
                 showForm = true
@@ -301,6 +322,7 @@ private fun DatabaseScreen(
 @Composable
 private fun DynamicTable(
     table: TableData,
+    rows: List<Map<String, String>>,
     onEdit: (Map<String, String>) -> Unit,
     onDelete: (Map<String, String>) -> Unit
 ) {
@@ -318,7 +340,7 @@ private fun DynamicTable(
             Divider()
 
             LazyColumn(Modifier.fillMaxHeight()) {
-                items(table.rows, key = { it["id"].orEmpty() }) { row ->
+                items(rows, key = { it["id"].orEmpty() }) { row ->
                     Row(
                         Modifier.fillMaxWidth().padding(horizontal = 8.dp ,vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -360,6 +382,15 @@ private fun DynamicTable(
             adapter = rememberScrollbarAdapter(horizontalScroll),
             modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth()
         )
+    }
+}
+
+private fun Map<String, String>.matchesDatabaseQuery(query: String, columns: List<String>): Boolean {
+    val trimmedQuery = query.trim().lowercase()
+    if (trimmedQuery.isBlank()) return true
+
+    return columns.any { column ->
+        get(column).orEmpty().lowercase().contains(trimmedQuery)
     }
 }
 
