@@ -4,6 +4,7 @@ import androidx.compose.foundation.HorizontalScrollbar
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -148,6 +149,8 @@ private fun DatabaseScreen(
 ) {
     var selectedTable by remember { mutableStateOf(repository.tables.first()) }
     var databaseQuery by remember { mutableStateOf("") }
+    var sortColumn by remember { mutableStateOf<String?>(null) }
+    var sortAscending by remember { mutableStateOf(true) }
     var expanded by remember { mutableStateOf(false) }
     var editingRow by remember { mutableStateOf<Map<String, String>?>(null) }
     var showForm by remember { mutableStateOf(false) }
@@ -155,6 +158,13 @@ private fun DatabaseScreen(
     val scope = rememberCoroutineScope()
     val visibleRows = selectedTable.rows.filter { row ->
         row.matchesDatabaseQuery(databaseQuery, selectedTable.schema.columns)
+    }.let { rows ->
+        sortColumn?.let { column ->
+            val sortedRows = rows.sortedWith { left, right ->
+                compareDatabaseCells(left[column].orEmpty(), right[column].orEmpty())
+            }
+            if (sortAscending) sortedRows else sortedRows.reversed()
+        } ?: rows
     }
 
     LaunchedEffect(apiBaseUrl, authToken) {
@@ -181,6 +191,8 @@ private fun DatabaseScreen(
                             onClick = {
                                 selectedTable = table
                                 databaseQuery = ""
+                                sortColumn = null
+                                sortAscending = true
                                 expanded = false
                             }
                         ) {
@@ -240,6 +252,16 @@ private fun DatabaseScreen(
         DynamicTable(
             table = selectedTable,
             rows = visibleRows,
+            sortColumn = sortColumn,
+            sortAscending = sortAscending,
+            onSort = { column ->
+                if (sortColumn == column) {
+                    sortAscending = !sortAscending
+                } else {
+                    sortColumn = column
+                    sortAscending = true
+                }
+            },
             onEdit = { row ->
                 editingRow = row.toMap()
                 showForm = true
@@ -323,6 +345,9 @@ private fun DatabaseScreen(
 private fun DynamicTable(
     table: TableData,
     rows: List<Map<String, String>>,
+    sortColumn: String?,
+    sortAscending: Boolean,
+    onSort: (String) -> Unit,
     onEdit: (Map<String, String>) -> Unit,
     onDelete: (Map<String, String>) -> Unit
 ) {
@@ -332,7 +357,11 @@ private fun DynamicTable(
         Column(Modifier.fillMaxSize().horizontalScroll(horizontalScroll).padding(8.dp)) {
             Row(Modifier.fillMaxWidth().background(Color(0xFFEEF2F4)).padding(8.dp)) {
                 table.schema.columns.forEach { column ->
-                    Text(column, modifier = Modifier.width(170.dp), fontWeight = FontWeight.Bold)
+                    Text(
+                        column.sortLabel(sortColumn, sortAscending),
+                        modifier = Modifier.width(170.dp).clickable { onSort(column) },
+                        fontWeight = FontWeight.Bold
+                    )
                 }
                 Text("Actions", modifier = Modifier.width(120.dp), fontWeight = FontWeight.Bold)
             }
@@ -383,6 +412,19 @@ private fun DynamicTable(
             modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth()
         )
     }
+}
+
+private fun String.sortLabel(sortColumn: String?, sortAscending: Boolean): String =
+    if (this != sortColumn) this else "$this ${if (sortAscending) "(asc)" else "(desc)"}"
+
+private fun compareDatabaseCells(left: String, right: String): Int {
+    val leftNumber = left.toDoubleOrNull()
+    val rightNumber = right.toDoubleOrNull()
+    if (leftNumber != null && rightNumber != null) {
+        return leftNumber.compareTo(rightNumber)
+    }
+
+    return left.lowercase().compareTo(right.lowercase())
 }
 
 private fun Map<String, String>.matchesDatabaseQuery(query: String, columns: List<String>): Boolean {
