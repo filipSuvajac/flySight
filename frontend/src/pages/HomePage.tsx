@@ -114,6 +114,16 @@ function ExploreSidePanel({
           <h2>Shared observation filters</h2>
           <p>These filters affect the eBird result table and charts on this page.</p>
         </div>
+        <div style={{ marginBottom: "16px" }}>
+          <label className="toggle-field">
+            <input
+              type="checkbox"
+              checked={filters.mineOnly}
+              onChange={(e) => onFiltersChange({ ...filters, mineOnly: e.target.checked })}
+            />
+            <span>My Sightings Only</span>
+          </label>
+        </div>
         <EbirdFilters
           mode="recent"
           locationFilter={filters.location}

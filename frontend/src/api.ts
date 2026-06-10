@@ -80,6 +80,64 @@ export async function fetchRecentEbirdObservations(token: string, days = 30, max
   return Array.isArray(payload.observations) ? payload.observations : [];
 }
 
+export async function fetchVisualizationObservations(
+  token: string,
+  filters: { species?: string; location?: string; date?: string; source?: string; mineOnly?: boolean },
+  recentDays = "30",
+  limit = 1000
+): Promise<VisualizationObservation[]> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (filters.species) params.set("species", filters.species);
+  if (filters.location) params.set("location", filters.location);
+  if (filters.mineOnly) params.set("mineOnly", "true");
+  if (filters.date) {
+    params.set("from", filters.date);
+    params.set("to", filters.date);
+  } else if (recentDays !== "all") {
+    const days = Number(recentDays) || 30;
+    const from = new Date();
+    from.setDate(from.getDate() - days);
+    params.set("from", from.toISOString().slice(0, 10));
+  }
+  if (filters.source) params.set("source", filters.source);
+
+  const response = await fetch(`${API_URL}/api/visualization/observations?${params.toString()}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!response.ok) throw new Error(`Observation visualization failed with HTTP ${response.status}`);
+  const payload = (await response.json()) as { observations?: VisualizationObservation[] };
+  return Array.isArray(payload.observations) ? payload.observations : [];
+}
+
+export async function fetchFavoriteBirds(token: string): Promise<FavoriteBird[]> {
+  const response = await fetch(`${API_URL}/api/me/favorites`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!response.ok) throw new Error(`Failed to load favorites with HTTP ${response.status}`);
+  const payload = (await response.json()) as { favorites?: FavoriteBird[] };
+  return Array.isArray(payload.favorites) ? payload.favorites : [];
+}
+
+export async function addFavoriteBird(token: string, birdId: number): Promise<void> {
+  const response = await fetch(`${API_URL}/api/me/favorites`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ birdId })
+  });
+  if (!response.ok) throw new Error(`Failed to save favorite with HTTP ${response.status}`);
+}
+
+export async function removeFavoriteBird(token: string, birdId: number): Promise<void> {
+  const response = await fetch(`${API_URL}/api/me/favorites/${birdId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!response.ok) throw new Error(`Failed to remove favorite with HTTP ${response.status}`);
+}
+
 export async function fetchEbirdHotspotObservations(
   token: string,
   locId: string,

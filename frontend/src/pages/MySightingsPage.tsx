@@ -6,6 +6,17 @@ import {
   deletePersonalObservation
 } from "../api";
 import type { PersonalObservation, BirdOption } from "../types";
+import { LocationPickerMap } from "../components/map/LocationPickerMap";
+
+async function reverseGeocode(lat: number, lon: number): Promise<string | null> {
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&accept-language=sl`);
+    const data = await res.json();
+    return data.address?.city || data.address?.town || data.address?.village || data.address?.municipality || data.name || data.display_name?.split(",")[0] || null;
+  } catch {
+    return null;
+  }
+}
 
 type MySightingsPageProps = {
   token: string;
@@ -31,6 +42,9 @@ export function MySightingsPage({ token }: MySightingsPageProps) {
   // Search states
   const [searchTerm, setSearchTerm] = useState("");
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+
+  // Map Picker
+  const [showMapPicker, setShowMapPicker] = useState(false);
 
   useEffect(() => {
     setIsLoading(true);
@@ -63,10 +77,26 @@ export function MySightingsPage({ token }: MySightingsPageProps) {
     };
   }, []);
 
-  function fillLjubljanaCoords() {
-    setLatitude("46.0569");
-    setLongitude("14.5058");
-    if (!locationName) setLocationName("Ljubljana Center");
+  function handleGetCurrentLocation() {
+    if (!navigator.geolocation) {
+      setError("Geolocation is not supported by your browser.");
+      return;
+    }
+    
+    setError("");
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const lat = position.coords.latitude;
+        const lon = position.coords.longitude;
+        setLatitude(lat.toFixed(5));
+        setLongitude(lon.toFixed(5));
+        const name = await reverseGeocode(lat, lon);
+        setLocationName(name || "My Current Location");
+      },
+      (err) => {
+        setError("Failed to get current location. Please allow location access or use the map.");
+      }
+    );
   }
 
   function handleSelectBird(b: BirdOption) {
@@ -374,21 +404,40 @@ export function MySightingsPage({ token }: MySightingsPageProps) {
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={fillLjubljanaCoords}
-              style={{
-                background: "transparent",
-                color: "#243b53",
-                border: "1px dashed #bcccdc",
-                padding: "6px",
-                borderRadius: "4px",
-                fontSize: "12px",
-                cursor: "pointer"
-              }}
-            >
-              📍 Set coordinates to Ljubljana Center
-            </button>
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button
+                type="button"
+                onClick={handleGetCurrentLocation}
+                style={{
+                  background: "#f0fdf4",
+                  color: "#166534",
+                  border: "1px dashed #bbf7d0",
+                  padding: "6px",
+                  borderRadius: "4px",
+                  fontSize: "12px",
+                  cursor: "pointer",
+                  flex: 1
+                }}
+              >
+                📍 Current Location
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowMapPicker(true)}
+                style={{
+                  background: "#f0f9ff",
+                  color: "#0369a1",
+                  border: "1px dashed #bae6fd",
+                  padding: "6px",
+                  borderRadius: "4px",
+                  fontSize: "12px",
+                  cursor: "pointer",
+                  flex: 1
+                }}
+              >
+                🗺️ Pick on Map
+              </button>
+            </div>
 
             <button type="submit" className="primary-action" disabled={isSaving}>
               {isSaving ? "Saving..." : "Save Sighting"}
@@ -454,6 +503,21 @@ export function MySightingsPage({ token }: MySightingsPageProps) {
           )}
         </div>
       </div>
+
+      {showMapPicker && (
+        <LocationPickerMap
+          initialLat={Number(latitude) || 46.0569}
+          initialLng={Number(longitude) || 14.5058}
+          onSelect={async (lat, lng) => {
+            setLatitude(lat.toFixed(5));
+            setLongitude(lng.toFixed(5));
+            const name = await reverseGeocode(lat, lng);
+            setLocationName(name || "Picked Location");
+            setShowMapPicker(false);
+          }}
+          onClose={() => setShowMapPicker(false)}
+        />
+      )}
     </section>
   );
 }

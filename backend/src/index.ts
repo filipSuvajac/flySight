@@ -368,7 +368,8 @@ app.delete("/api/me/observations/:id", requireAuth, async (req, res, next) => {
 
 app.get("/api/visualization/observations", requireAuth, async (req, res, next) => {
   try {
-    const filters = buildVisualizationFilters(req.query);
+    autoSyncEbirdData().catch(console.error);
+    const filters = buildVisualizationFilters(req.query, req.user?.id);
     const limit = clampNumber(req.query.limit, 1, 5000, 1000);
     const result = await query<VisualizationObservationRow>(
       `select
@@ -405,7 +406,7 @@ app.get("/api/visualization/observations", requireAuth, async (req, res, next) =
 
 app.get("/api/visualization/summary", requireAuth, async (req, res, next) => {
   try {
-    const filters = buildVisualizationFilters(req.query);
+    const filters = buildVisualizationFilters(req.query, req.user?.id);
     const species = await query<ChartCountRow>(
       `select
          b.name as label,
@@ -688,6 +689,140 @@ app.post("/api/import/dopps", requireAuth, requireAdmin, async (req, res, next) 
   }
 });
 
+async function processEbirdObservations(observations: any[]) {
+  let importedBirds = 0;
+  let importedLocations = 0;
+  let importedObservations = 0;
+  let skipped = 0;
+
+  for (const observation of observations) {
+    if (!isPlainRecord(observation)) {
+      skipped++;
+      continue;
+    }
+
+    const ebirdId = normalizeText(observation.id);
+    const speciesCode = normalizeText(observation.speciesCode);
+    const commonName = normalizeText(observation.commonName);
+    const slovenianName = normalizeText(observation.slovenianName);
+    const scientificName = normalizeText(observation.scientificName);
+    const speciesName = slovenianName || commonName || speciesCode;
+    const locationName = normalizeText(observation.locationName) || normalizeText(observation.city);
+    const latitude = numberOr(observation.latitude, Number.NaN);
+    const longitude = numberOr(observation.longitude, Number.NaN);
+    const eventDate = normalizeText(observation.observedAt).slice(0, 10);
+
+    if (!ebirdId || !speciesName || !locationName || !Number.isFinite(latitude) || !Number.isFinite(longitude) || !isIsoDate(eventDate)) {
+      skipped++;
+      continue;
+    }
+
+    const duplicate = await query<{ id: number }>(
+      "select id from observation where metadata->>'ebirdId' = $1 limit 1",
+      [ebirdId]
+    );
+    if (duplicate.rowCount) {
+      skipped++;
+      continue;
+    }
+
+    const existingBird = await query<{ id: number }>(
+      "select id from bird_info where name = $1 and latin_name = $2 limit 1",
+      [speciesName, scientificName || speciesCode]
+    );
+
+    const birdResult = await query<{ id: number }>(
+      `insert into bird_info (name, latin_name, description, image_url, source, metadata)
+       values ($1, $2, $3, $4, 'eBird', $5)
+       on conflict (name, latin_name) do update
+       set image_url = coalesce(nullif(excluded.image_url, ''), bird_info.image_url),
+           source = excluded.source
+       returning id`,
+      [
+        speciesName,
+        scientificName || speciesCode,
+        commonName && slovenianName ? commonName : "",
+        normalizeText(observation.imageUrl),
+        { speciesCode, commonName, slovenianName }
+      ]
+    );
+    if (existingBird.rowCount === 0) importedBirds++;
+
+    let location = await query<{ id: number }>(
+      "select id from location where name = $1 and latitude = $2 and longitude = $3 limit 1",
+      [locationName, latitude, longitude]
+    );
+    if (location.rowCount === 0) {
+      location = await query<{ id: number }>(
+        "insert into location (name, latitude, longitude, metadata) values ($1, $2, $3, $4) returning id",
+        [
+          locationName,
+          latitude,
+          longitude,
+          {
+            city: normalizeText(observation.city),
+            region: normalizeText(observation.region),
+            source: "eBird"
+          }
+        ]
+      );
+      importedLocations++;
+    }
+
+    await query(
+      `insert into observation (bird_id, location_id, observed_count, event_date, source, metadata)
+       values ($1, $2, $3, $4::date, 'eBird', $5)`,
+      [
+        birdResult.rows[0].id,
+        location.rows[0].id,
+        Math.max(0, clampNumber(observation.count, 0, 100000, 1)),
+        eventDate,
+        {
+          ebirdId,
+          speciesCode,
+          observedAt: normalizeText(observation.observedAt),
+          valid: Boolean(observation.valid),
+          reviewed: Boolean(observation.reviewed)
+        }
+      ]
+    );
+    importedObservations++;
+  }
+
+  return { importedBirds, importedLocations, importedObservations, skipped };
+}
+
+let isSyncingEbird = false;
+async function autoSyncEbirdData() {
+  if (isSyncingEbird) return;
+  isSyncingEbird = true;
+  try {
+    const ds = await query<{ last_sync: Date | null, recent_days: number, max_results: number, enabled: boolean }>(
+      "select last_sync, recent_days, max_results, enabled from data_source_settings where key = 'ebird'"
+    );
+    const settings = ds.rows[0];
+    if (!settings || !settings.enabled) return;
+
+    const lastSync = settings.last_sync ? new Date(settings.last_sync).getTime() : 0;
+    if (Date.now() - lastSync < 3600000) return; // 1 hour
+
+    const observations = await fetchSloveniaEbirdObservations({ days: settings.recent_days, maxResults: settings.max_results });
+    const result = await processEbirdObservations(observations);
+
+    await query("update data_source_settings set last_sync = now() where key = 'ebird'");
+    if (result.importedObservations > 0) {
+      await query(
+        "insert into import_batch (source, imported_count, metadata) values ($1, $2, $3)",
+        ["eBirdAutoSync", result.importedObservations, { importedBirds: result.importedBirds, importedLocations: result.importedLocations, skipped: result.skipped }]
+      );
+    }
+  } catch (error) {
+    console.error("Auto sync eBird failed:", error);
+  } finally {
+    isSyncingEbird = false;
+  }
+}
+
 app.post("/api/import/ebird", requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const observations = Array.isArray(req.body)
@@ -695,116 +830,20 @@ app.post("/api/import/ebird", requireAuth, requireAdmin, async (req, res, next) 
       : Array.isArray(req.body?.observations)
         ? req.body.observations
         : [];
-    let importedBirds = 0;
-    let importedLocations = 0;
-    let importedObservations = 0;
-    let skipped = 0;
 
-    for (const observation of observations) {
-      if (!isPlainRecord(observation)) {
-        skipped++;
-        continue;
-      }
-
-      const ebirdId = normalizeText(observation.id);
-      const speciesCode = normalizeText(observation.speciesCode);
-      const commonName = normalizeText(observation.commonName);
-      const slovenianName = normalizeText(observation.slovenianName);
-      const scientificName = normalizeText(observation.scientificName);
-      const speciesName = slovenianName || commonName || speciesCode;
-      const locationName = normalizeText(observation.locationName) || normalizeText(observation.city);
-      const latitude = numberOr(observation.latitude, Number.NaN);
-      const longitude = numberOr(observation.longitude, Number.NaN);
-      const eventDate = normalizeText(observation.observedAt).slice(0, 10);
-
-      if (!ebirdId || !speciesName || !locationName || !Number.isFinite(latitude) || !Number.isFinite(longitude) || !isIsoDate(eventDate)) {
-        skipped++;
-        continue;
-      }
-
-      const duplicate = await query<{ id: number }>(
-        "select id from observation where metadata->>'ebirdId' = $1 limit 1",
-        [ebirdId]
-      );
-      if (duplicate.rowCount) {
-        skipped++;
-        continue;
-      }
-
-      const existingBird = await query<{ id: number }>(
-        "select id from bird_info where name = $1 and latin_name = $2 limit 1",
-        [speciesName, scientificName || speciesCode]
-      );
-
-      const birdResult = await query<{ id: number }>(
-        `insert into bird_info (name, latin_name, description, image_url, source, metadata)
-         values ($1, $2, $3, $4, 'eBird', $5)
-         on conflict (name, latin_name) do update
-         set image_url = coalesce(nullif(excluded.image_url, ''), bird_info.image_url),
-             source = excluded.source
-         returning id`,
-        [
-          speciesName,
-          scientificName || speciesCode,
-          commonName && slovenianName ? commonName : "",
-          normalizeText(observation.imageUrl),
-          { speciesCode, commonName, slovenianName }
-        ]
-      );
-      if (existingBird.rowCount === 0) importedBirds++;
-
-      let location = await query<{ id: number }>(
-        "select id from location where name = $1 and latitude = $2 and longitude = $3 limit 1",
-        [locationName, latitude, longitude]
-      );
-      if (location.rowCount === 0) {
-        location = await query<{ id: number }>(
-          "insert into location (name, latitude, longitude, metadata) values ($1, $2, $3, $4) returning id",
-          [
-            locationName,
-            latitude,
-            longitude,
-            {
-              city: normalizeText(observation.city),
-              region: normalizeText(observation.region),
-              source: "eBird"
-            }
-          ]
-        );
-        importedLocations++;
-      }
-
-      await query(
-        `insert into observation (bird_id, location_id, observed_count, event_date, source, metadata)
-         values ($1, $2, $3, $4::date, 'eBird', $5)`,
-        [
-          birdResult.rows[0].id,
-          location.rows[0].id,
-          Math.max(0, clampNumber(observation.count, 0, 100000, 1)),
-          eventDate,
-          {
-            ebirdId,
-            speciesCode,
-            observedAt: normalizeText(observation.observedAt),
-            valid: Boolean(observation.valid),
-            reviewed: Boolean(observation.reviewed)
-          }
-        ]
-      );
-      importedObservations++;
-    }
+    const result = await processEbirdObservations(observations);
 
     await query(
       "insert into import_batch (source, imported_count, metadata) values ($1, $2, $3)",
-      ["eBird", importedObservations, { importedBirds, importedLocations, skipped }]
+      ["eBird", result.importedObservations, { importedBirds: result.importedBirds, importedLocations: result.importedLocations, skipped: result.skipped }]
     );
 
     res.json({
       status: "ok",
-      birds: importedBirds,
-      locations: importedLocations,
-      observations: importedObservations,
-      skipped
+      birds: result.importedBirds,
+      locations: result.importedLocations,
+      observations: result.importedObservations,
+      skipped: result.skipped
     });
   } catch (error) {
     next(error);
@@ -1281,7 +1320,7 @@ function sendSocketJson(socket: WebSocket, payload: unknown) {
   }
 }
 
-function buildVisualizationFilters(queryParams: express.Request["query"]) {
+function buildVisualizationFilters(queryParams: express.Request["query"], userId?: number) {
   const conditions: string[] = [];
   const params: unknown[] = [];
   const species = normalizeText(firstQueryValue(queryParams.species));
@@ -1289,6 +1328,12 @@ function buildVisualizationFilters(queryParams: express.Request["query"]) {
   const source = normalizeText(firstQueryValue(queryParams.source));
   const from = optionalDateParam(queryParams.from ?? queryParams.dateFrom, "from");
   const to = optionalDateParam(queryParams.to ?? queryParams.dateTo, "to");
+  const mineOnly = queryParams.mineOnly === "true";
+
+  if (mineOnly && userId) {
+    params.push(userId);
+    conditions.push(`o.user_id = $${params.length}`);
+  }
 
   if (species) {
     params.push(`%${species.toLowerCase()}%`);
