@@ -46,7 +46,7 @@ export function Navbar({ health, user, activeRoute, onRouteChange, onLogout }: N
       </div>
 
       <div className="profile-chip">
-        <StatusPill health={health} />
+        {isAdmin && <StatusPill health={health} />}
         <div className="avatar">{initials(user?.name ?? user?.email ?? "FS")}</div>
         <div className="profile-copy">
           <strong>{user?.name ?? "Demo user"}</strong>
