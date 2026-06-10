@@ -1,6 +1,14 @@
 export type AuthMode = "login" | "register";
 
-export type WorkspaceRoute = "explore" | "analytics" | "data" | "admin" | "cityinfra";
+export type WorkspaceRoute = "explore" | "analytics" | "data" | "admin" | "cityinfra" | "my-sightings" | "favorites" | "profile";
+
+export type UserProfile = {
+  name: string;
+  email: string;
+  role: string;
+  bio: string;
+  location: string;
+};
 
 export type Health = {
   status: string;

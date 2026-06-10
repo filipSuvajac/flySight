@@ -4,6 +4,7 @@ import { isAdminUser } from "../types";
 import { AppLayout } from "../layouts/AppLayout";
 import { HomePage } from "./HomePage";
 import { AdminPage } from "./AdminPage";
+import { ProfilePage } from "./ProfilePage";
 import { StatsGrid } from "../components/StatsGrid";
 
 type WorkspacePageProps = {
@@ -18,10 +19,11 @@ type WorkspacePageProps = {
 export function WorkspacePage({ health, user, token, counts, error, onLogout }: WorkspacePageProps) {
   const [activeRoute, setActiveRoute] = useState<WorkspaceRoute>("explore");
   const isAdmin = isAdminUser(user);
-  const safeRoute = !isAdmin && activeRoute !== "explore" ? "explore" : activeRoute;
+  const allowedUserRoutes: WorkspaceRoute[] = ["explore", "my-sightings", "favorites", "profile"];
+  const safeRoute = !isAdmin && !allowedUserRoutes.includes(activeRoute) ? "explore" : activeRoute;
 
   function handleRouteChange(route: WorkspaceRoute) {
-    if (!isAdmin && route !== "explore") return;
+    if (!isAdmin && !allowedUserRoutes.includes(route)) return;
     setActiveRoute(route);
   }
 
@@ -32,6 +34,9 @@ export function WorkspacePage({ health, user, token, counts, error, onLogout }: 
       {safeRoute === "data" && <DataPage counts={counts} error={error} />}
       {safeRoute === "admin" && isAdmin && <AdminPage health={health} token={token} />}
       {safeRoute === "cityinfra" && <CityInfraPage />}
+      {safeRoute === "my-sightings" && <MySightingsPage />}
+      {safeRoute === "favorites" && <FavoritesPage />}
+      {safeRoute === "profile" && <ProfilePage token={token} />}
     </AppLayout>
   );
 }
@@ -106,6 +111,36 @@ function CityInfraPage() {
           <span className="water-line" />
           <span className="poi-dot" />
         </div>
+      </div>
+    </section>
+  );
+}
+
+function MySightingsPage() {
+  return (
+    <section className="route-page">
+      <div className="page-heading">
+        <span>My Sightings</span>
+        <h1>Personal observations</h1>
+      </div>
+      <div className="route-panel">
+        <h2>Sightings log</h2>
+        <p style={{ color: "#52606d" }}>Track and manage your bird sightings here. Feature coming soon.</p>
+      </div>
+    </section>
+  );
+}
+
+function FavoritesPage() {
+  return (
+    <section className="route-page">
+      <div className="page-heading">
+        <span>Favorites</span>
+        <h1>My favorite species</h1>
+      </div>
+      <div className="route-panel">
+        <h2>Species wishlist</h2>
+        <p style={{ color: "#52606d" }}>Save your favorite species to watch. Feature coming soon.</p>
       </div>
     </section>
   );

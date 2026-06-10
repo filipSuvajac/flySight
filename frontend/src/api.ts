@@ -5,7 +5,8 @@ import type {
   DataSourceSettings,
   EbirdHotspot,
   EbirdObservation,
-  Health
+  Health,
+  UserProfile
 } from "./types";
 
 export const API_URL = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? "http://localhost" : window.location.origin);
@@ -163,4 +164,28 @@ export async function runDataSourceAction(
 
   const synced = await updateDataSource(token, source.key, { markSynced: true });
   return { message: `${source.name} marked as synced.`, source: synced };
+}
+
+export async function fetchProfile(token: string): Promise<UserProfile> {
+  const response = await fetch(`${API_URL}/api/me/profile`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!response.ok) throw new Error(`Profile load failed with HTTP ${response.status}`);
+  return response.json() as Promise<UserProfile>;
+}
+
+export async function updateProfile(
+  token: string,
+  profile: { bio: string; location: string }
+): Promise<UserProfile> {
+  const response = await fetch(`${API_URL}/api/me/profile`, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(profile)
+  });
+  if (!response.ok) throw new Error(`Profile update failed with HTTP ${response.status}`);
+  return response.json() as Promise<UserProfile>;
 }

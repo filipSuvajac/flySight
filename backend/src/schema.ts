@@ -79,6 +79,14 @@ export async function ensureSchema() {
       updated_at timestamptz not null default now()
     );
 
+    create table if not exists user_profiles (
+      user_id integer primary key references users(id) on delete cascade,
+      bio text not null default '',
+      location text not null default '',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+
     create or replace function set_updated_at()
     returns trigger as $$
     begin
@@ -88,7 +96,7 @@ export async function ensureSchema() {
     $$ language plpgsql;
   `);
 
-  for (const table of ["users", "bird_family", "bird_info", "location", "observation", "data_source_settings"]) {
+  for (const table of ["users", "bird_family", "bird_info", "location", "observation", "data_source_settings", "user_profiles"]) {
     await query(`
       drop trigger if exists ${table}_updated_at on ${table};
       create trigger ${table}_updated_at

@@ -151,6 +151,80 @@ app.get("/auth/me", requireAuth, (req, res) => {
   res.json({ user: req.user });
 });
 
+app.get("/api/me/profile", requireAuth, async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
+    const result = await query<{
+      name: string;
+      email: string;
+      role: string;
+      bio: string;
+      location: string;
+    }>(
+      `select u.name, u.email, u.role, coalesce(p.bio, '') as bio, coalesce(p.location, '') as location
+       from users u
+       left join user_profiles p on p.user_id = u.id
+       where u.id = $1`,
+      [userId]
+    );
+
+    if (result.rowCount === 0) {
+      res.status(404).json({ error: "User not found." });
+      return;
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.put("/api/me/profile", requireAuth, async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
+    const bio = normalizeText(req.body.bio);
+    const location = normalizeText(req.body.location);
+
+    await query(
+      `insert into user_profiles (user_id, bio, location)
+       values ($1, $2, $3)
+       on conflict (user_id) do update
+       set bio = excluded.bio,
+           location = excluded.location,
+           updated_at = now()`,
+      [userId, bio, location]
+    );
+
+    const result = await query<{
+      name: string;
+      email: string;
+      role: string;
+      bio: string;
+      location: string;
+    }>(
+      `select u.name, u.email, u.role, coalesce(p.bio, '') as bio, coalesce(p.location, '') as location
+       from users u
+       left join user_profiles p on p.user_id = u.id
+       where u.id = $1`,
+      [userId]
+    );
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get("/api/visualization/observations", requireAuth, async (req, res, next) => {
   try {
     const filters = buildVisualizationFilters(req.query);
