@@ -5,12 +5,14 @@ export type AuthUser = {
   id: number;
   email: string;
   name: string;
+  role: string;
 };
 
 type JwtPayload = {
   sub: string;
   email: string;
   name: string;
+  role?: string;
 };
 
 const fallbackSecret = "flysight-dev-secret-change-me";
@@ -34,7 +36,8 @@ export function signToken(user: AuthUser) {
     {
       sub: String(user.id),
       email: user.email,
-      name: user.name
+      name: user.name,
+      role: user.role === "admin" ? "admin" : "user"
     } satisfies JwtPayload,
     jwtSecret(),
     options
@@ -46,7 +49,8 @@ export function verifyToken(token: string): AuthUser {
   return {
     id: Number(decoded.sub),
     email: decoded.email,
-    name: decoded.name
+    name: decoded.name,
+    role: decoded.role === "admin" ? "admin" : "user"
   };
 }
 
@@ -65,4 +69,13 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
   } catch {
     res.status(401).json({ error: "Invalid or expired token." });
   }
+}
+
+export function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  if (req.user?.role !== "admin") {
+    res.status(403).json({ error: "Admin access required." });
+    return;
+  }
+
+  next();
 }

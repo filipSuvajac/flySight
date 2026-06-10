@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Counts, Health, User, WorkspaceRoute } from "../types";
+import { isAdminUser } from "../types";
 import { AppLayout } from "../layouts/AppLayout";
 import { HomePage } from "./HomePage";
 import { AdminPage } from "./AdminPage";
@@ -16,14 +17,21 @@ type WorkspacePageProps = {
 
 export function WorkspacePage({ health, user, token, counts, error, onLogout }: WorkspacePageProps) {
   const [activeRoute, setActiveRoute] = useState<WorkspaceRoute>("explore");
+  const isAdmin = isAdminUser(user);
+  const safeRoute = !isAdmin && activeRoute !== "explore" ? "explore" : activeRoute;
+
+  function handleRouteChange(route: WorkspaceRoute) {
+    if (!isAdmin && route !== "explore") return;
+    setActiveRoute(route);
+  }
 
   return (
-    <AppLayout health={health} user={user} activeRoute={activeRoute} onRouteChange={setActiveRoute} onLogout={onLogout}>
-      {activeRoute === "explore" && <HomePage token={token} counts={counts} error={error} />}
-      {activeRoute === "analytics" && <AnalyticsPage counts={counts} />}
-      {activeRoute === "data" && <DataPage counts={counts} error={error} />}
-      {activeRoute === "admin" && <AdminPage health={health} token={token} />}
-      {activeRoute === "cityinfra" && <CityInfraPage />}
+    <AppLayout health={health} user={user} activeRoute={safeRoute} onRouteChange={handleRouteChange} onLogout={onLogout}>
+      {safeRoute === "explore" && <HomePage token={token} user={user} />}
+      {safeRoute === "analytics" && <AnalyticsPage counts={counts} />}
+      {safeRoute === "data" && <DataPage counts={counts} error={error} />}
+      {safeRoute === "admin" && isAdmin && <AdminPage health={health} token={token} />}
+      {safeRoute === "cityinfra" && <CityInfraPage />}
     </AppLayout>
   );
 }

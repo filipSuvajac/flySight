@@ -4,6 +4,7 @@ import { AuthPage } from "./pages/AuthPage";
 import { WorkspacePage } from "./pages/WorkspacePage";
 import { clearSession, readStoredUser, storageKeys, storeSession } from "./storage";
 import type { AuthMode, Counts, Health, User } from "./types";
+import { isAdminUser } from "./types";
 
 export function App() {
   const [health, setHealth] = useState<Health | null>(null);
@@ -25,7 +26,10 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (!token) return;
+    if (!token || !isAdminUser(user)) {
+      setCounts({});
+      return;
+    }
 
     fetchTableCounts(token)
       .then((nextCounts) => {
@@ -35,7 +39,7 @@ export function App() {
       .catch((loadError: unknown) => {
         setError(loadError instanceof Error ? loadError.message : "Could not load API data.");
       });
-  }, [token]);
+  }, [token, user]);
 
   async function handleAuthenticate(mode: AuthMode) {
     try {

@@ -1,7 +1,6 @@
 import type { AuthMode, Health } from "../types";
 import { AuthTabs } from "./AuthTabs";
 import { FormField } from "./FormField";
-import { StatusPill } from "./StatusPill";
 
 type AuthLandingProps = {
   mode: AuthMode;
@@ -23,7 +22,7 @@ export function AuthLanding({
   email,
   name,
   password,
-  health,
+  health: _health,
   error,
   message,
   onModeChange,
@@ -36,7 +35,6 @@ export function AuthLanding({
     <main className="auth-shell">
       <section className="hero">
         <div className="hero-copy">
-          <StatusPill health={health} />
           <h1>FlySight</h1>
           <p>
             "Tame birds sing of freedom. Wild birds fly." — John Lennon

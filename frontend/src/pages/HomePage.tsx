@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
-import type { Counts, EbirdObservation } from "../types";
-import { DashboardPanel } from "../components/dashboard/DashboardPanel";
+import type { EbirdObservation, User } from "../types";
+import { isAdminUser } from "../types";
 import { EbirdFilters } from "../components/ebird/EbirdFilters";
 import { EbirdPanel } from "../components/ebird/EbirdPanel";
 import { formatDateTime } from "../components/ebird/format";
@@ -12,14 +12,14 @@ import {
 
 type HomePageProps = {
   token: string;
-  counts: Counts;
-  error: string;
+  user: User | null;
 };
 
-export function HomePage({ token, counts, error }: HomePageProps) {
+export function HomePage({ token, user }: HomePageProps) {
   const [filters, setFilters] = useState(emptyObservationFilters);
   const [recentDays, setRecentDays] = useState("30");
   const [selectedObservation, setSelectedObservation] = useState<EbirdObservation | null>(null);
+  const isAdmin = isAdminUser(user);
   const minDate = useMemo(() => {
     const date = new Date();
     date.setDate(date.getDate() - 30);
@@ -47,7 +47,7 @@ export function HomePage({ token, counts, error }: HomePageProps) {
           </div>
         </div>
         <div className="explore-actions">
-          <span>Shared filters</span>
+          <span>{isAdmin ? "Developer admin access" : "User explorer access"}</span>
           <span>Live eBird data</span>
         </div>
       </div>
@@ -60,13 +60,12 @@ export function HomePage({ token, counts, error }: HomePageProps) {
           onSelectObservation={setSelectedObservation}
         />
         <ExploreSidePanel
-          counts={counts}
-          error={error}
           filters={filters}
           minDate={minDate}
           recentDays={recentDays}
           selectedObservation={selectedObservation}
           today={today}
+          isAdmin={isAdmin}
           onFiltersChange={updateFilters}
           onRecentDaysChange={updateRecentDays}
         />
@@ -77,7 +76,7 @@ export function HomePage({ token, counts, error }: HomePageProps) {
           token={token}
           filters={filters}
           recentDays={recentDays}
-          hideFilters
+          hideFilters={!isAdmin}
           onFiltersChange={updateFilters}
           onRecentDaysChange={updateRecentDays}
         />
@@ -87,36 +86,33 @@ export function HomePage({ token, counts, error }: HomePageProps) {
 }
 
 type ExploreSidePanelProps = {
-  counts: Counts;
-  error: string;
   filters: ObservationFilters;
   minDate: string;
   recentDays: string;
   selectedObservation: EbirdObservation | null;
   today: string;
   onFiltersChange: (filters: ObservationFilters) => void;
+  isAdmin: boolean;
   onRecentDaysChange: (value: string) => void;
 };
 
 function ExploreSidePanel({
-  counts,
-  error,
   filters,
   minDate,
   recentDays,
   selectedObservation,
   today,
+  isAdmin,
   onFiltersChange,
   onRecentDaysChange
 }: ExploreSidePanelProps) {
   return (
     <aside className="explore-side-panel">
-      <DashboardPanel counts={counts} error={error} />
-
-      <section className="filter-stage">
+      <section className="filter-stage admin-filter-stage">
         <div>
-          <span>Filter workspace</span>
+          <span>{isAdmin ? "Admin controls" : "Observation controls"}</span>
           <h2>Shared observation filters</h2>
+          <p>These filters affect the eBird result table and charts on this page.</p>
         </div>
         <EbirdFilters
           mode="recent"
