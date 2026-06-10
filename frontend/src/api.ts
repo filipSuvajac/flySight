@@ -85,13 +85,14 @@ export async function fetchRecentEbirdObservations(token: string, days = 30, max
 
 export async function fetchVisualizationObservations(
   token: string,
-  filters: { species?: string; location?: string; date?: string; source?: string },
+  filters: { species?: string; location?: string; date?: string; source?: string; mineOnly?: boolean },
   recentDays = "30",
   limit = 1000
 ): Promise<VisualizationObservation[]> {
   const params = new URLSearchParams({ limit: String(limit) });
   if (filters.species) params.set("species", filters.species);
   if (filters.location) params.set("location", filters.location);
+  if (filters.mineOnly) params.set("mineOnly", "true");
   if (filters.date) {
     params.set("from", filters.date);
     params.set("to", filters.date);

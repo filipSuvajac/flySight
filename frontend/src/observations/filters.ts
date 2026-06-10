@@ -5,13 +5,15 @@ export type ObservationFilters = {
   location: string;
   date: string;
   source: string;
+  mineOnly?: boolean;
 };
 
 export const emptyObservationFilters: ObservationFilters = {
   species: "",
   location: "",
   date: "",
-  source: ""
+  source: "",
+  mineOnly: false
 };
 
 export function filterEbirdObservations(
