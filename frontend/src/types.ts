@@ -10,6 +10,11 @@ export type UserProfile = {
   location: string;
 };
 
+export type UserProfileUpdate = UserProfile & {
+  user: User;
+  token: string;
+};
+
 export type Health = {
   status: string;
   database: string;
@@ -49,6 +54,37 @@ export type EbirdObservation = {
   region: string;
   valid: boolean;
   reviewed: boolean;
+};
+
+export type VisualizationObservation = {
+  observationId: number;
+  observedCount: number;
+  eventDate: string;
+  source: string;
+  metadata: Record<string, unknown>;
+  birdId: number;
+  speciesName: string;
+  scientificName: string;
+  imageUrl: string;
+  familyName: string | null;
+  familyLatinName: string | null;
+  locationId: number;
+  locationName: string;
+  latitude: number;
+  longitude: number;
+  isFavorite: boolean;
+};
+
+export type FavoriteBird = {
+  birdId: number;
+  birdName: string;
+  birdLatinName: string;
+  birdDescription: string;
+  birdImageUrl: string;
+  source: string;
+  familyName: string | null;
+  familyLatinName: string | null;
+  createdAt: string;
 };
 
 export type EbirdHotspot = {

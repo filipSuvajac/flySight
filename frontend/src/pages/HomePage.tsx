@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { EbirdObservation, User } from "../types";
+import type { User, VisualizationObservation } from "../types";
 import { isAdminUser } from "../types";
 import { EbirdFilters } from "../components/ebird/EbirdFilters";
 import { EbirdPanel } from "../components/ebird/EbirdPanel";
@@ -18,11 +18,11 @@ type HomePageProps = {
 export function HomePage({ token, user }: HomePageProps) {
   const [filters, setFilters] = useState(emptyObservationFilters);
   const [recentDays, setRecentDays] = useState("30");
-  const [selectedObservation, setSelectedObservation] = useState<EbirdObservation | null>(null);
+  const [selectedObservation, setSelectedObservation] = useState<VisualizationObservation | null>(null);
   const isAdmin = isAdminUser(user);
   const minDate = useMemo(() => {
     const date = new Date();
-    date.setDate(date.getDate() - 30);
+    date.setFullYear(date.getFullYear() - 10);
     return date.toISOString().slice(0, 10);
   }, []);
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
@@ -89,7 +89,7 @@ type ExploreSidePanelProps = {
   filters: ObservationFilters;
   minDate: string;
   recentDays: string;
-  selectedObservation: EbirdObservation | null;
+  selectedObservation: VisualizationObservation | null;
   today: string;
   onFiltersChange: (filters: ObservationFilters) => void;
   isAdmin: boolean;
@@ -135,20 +135,24 @@ function ExploreSidePanel({
         <span>Selection details</span>
         {selectedObservation ? (
           <div className="selected-observation">
-            <h2>{selectedObservation.slovenianName || selectedObservation.commonName}</h2>
-            <p>{selectedObservation.commonName}</p>
+            <h2>{selectedObservation.speciesName}</h2>
+            <p>{selectedObservation.scientificName || selectedObservation.familyName || "Scientific name missing"}</p>
             <dl>
               <div>
                 <dt>Location</dt>
-                <dd>{selectedObservation.locationName || selectedObservation.city}</dd>
+                <dd>{selectedObservation.locationName}</dd>
               </div>
               <div>
                 <dt>Date</dt>
-                <dd>{formatDateTime(selectedObservation.observedAt)}</dd>
+                <dd>{formatDateTime(selectedObservation.eventDate)}</dd>
               </div>
               <div>
                 <dt>Count</dt>
-                <dd>{selectedObservation.count ?? "-"}</dd>
+                <dd>{selectedObservation.observedCount}</dd>
+              </div>
+              <div>
+                <dt>Source</dt>
+                <dd>{selectedObservation.source}</dd>
               </div>
             </dl>
           </div>

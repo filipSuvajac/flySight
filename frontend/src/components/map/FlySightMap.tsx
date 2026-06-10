@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import L from "leaflet";
 import { MapContainer, Marker, Popup, TileLayer } from "react-leaflet";
-import { fetchRecentEbirdObservations } from "../../api";
-import { filterEbirdObservations, type ObservationFilters } from "../../observations/filters";
-import type { EbirdObservation } from "../../types";
+import { addFavoriteBird, fetchVisualizationObservations, removeFavoriteBird } from "../../api";
+import type { ObservationFilters } from "../../observations/filters";
+import type { VisualizationObservation } from "../../types";
 import { formatDateTime } from "../ebird/format";
 import birdIconUrl from "../../assets/bird-fill-svgrepo-com.svg";
 
@@ -11,10 +11,10 @@ type FlySightMapProps = {
   token: string;
   filters: ObservationFilters;
   recentDays: string;
-  onSelectObservation: (observation: EbirdObservation) => void;
+  onSelectObservation: (observation: VisualizationObservation) => void;
 };
 
-function hasCoordinates(observation: EbirdObservation): observation is EbirdObservation & {
+function hasCoordinates(observation: VisualizationObservation): observation is VisualizationObservation & {
   latitude: number;
   longitude: number;
 } {
@@ -39,48 +39,71 @@ export function FlySightMap({
   recentDays,
   onSelectObservation
 }: FlySightMapProps) {
-  const [observations, setObservations] = useState<EbirdObservation[]>([]);
+  const [observations, setObservations] = useState<VisualizationObservation[]>([]);
   const [selectedImage, setSelectedImage] = useState<{ src: string; alt: string } | null>(null);
-  const [status, setStatus] = useState("Loading eBird sightings...");
+  const [status, setStatus] = useState("Loading database sightings...");
   const [error, setError] = useState("");
+  const [favoriteBirdIds, setFavoriteBirdIds] = useState<Set<number>>(new Set());
+  const [favoriteBusyId, setFavoriteBusyId] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
-    setStatus("Loading eBird sightings...");
+    setStatus("Loading database sightings...");
     setError("");
 
-    fetchRecentEbirdObservations(token, Number(recentDays) || 30)
+    fetchVisualizationObservations(token, filters, recentDays)
       .then((nextObservations) => {
         if (cancelled) return;
         setObservations(nextObservations);
-        setStatus(`${nextObservations.length} recent eBird sightings`);
+        setFavoriteBirdIds(new Set(nextObservations.filter((observation) => observation.isFavorite).map((observation) => observation.birdId)));
+        setStatus(`${nextObservations.length} database sightings`);
       })
       .catch((mapError: unknown) => {
         if (cancelled) return;
         setObservations([]);
-        setStatus("eBird map needs attention");
-        setError(mapError instanceof Error ? mapError.message : "Could not load eBird sightings.");
+        setStatus("Observation map needs attention");
+        setError(mapError instanceof Error ? mapError.message : "Could not load database sightings.");
       });
 
     return () => {
       cancelled = true;
     };
-  }, [recentDays, token]);
+  }, [filters, recentDays, token]);
 
-  const filteredObservations = useMemo(
-    () => filterEbirdObservations(observations, filters),
-    [filters, observations]
-  );
-  const markers = useMemo(() => filteredObservations.filter(hasCoordinates), [filteredObservations]);
+  const markers = useMemo(() => observations.filter(hasCoordinates), [observations]);
+
+  async function toggleFavorite(observation: VisualizationObservation) {
+    const isFavorite = favoriteBirdIds.has(observation.birdId);
+    setFavoriteBusyId(observation.birdId);
+    setError("");
+
+    try {
+      if (isFavorite) {
+        await removeFavoriteBird(token, observation.birdId);
+        setFavoriteBirdIds((current) => {
+          const next = new Set(current);
+          next.delete(observation.birdId);
+          return next;
+        });
+      } else {
+        await addFavoriteBird(token, observation.birdId);
+        setFavoriteBirdIds((current) => new Set(current).add(observation.birdId));
+      }
+    } catch (favoriteError) {
+      setError(favoriteError instanceof Error ? favoriteError.message : "Could not update favorite.");
+    } finally {
+      setFavoriteBusyId(null);
+    }
+  }
 
   return (
     <section className="map-card">
       <div className="map-card-header">
         <div>
-          <span>Live eBird view</span>
+          <span>Database view</span>
           <h2>Slovenia sightings map</h2>
-          <p>{markers.length} filtered markers from {observations.length} loaded observations</p>
+          <p>{markers.length} markers from {observations.length} filtered database observations</p>
           {error && <p className="map-error">{error}</p>}
         </div>
         <div className="map-pulse">{markers.length} mapped</div>
@@ -94,7 +117,7 @@ export function FlySightMap({
         {markers.map((observation) => (
           <Marker
             icon={birdMarkerIcon}
-            key={observation.id}
+            key={observation.observationId}
             eventHandlers={{
               click: () => onSelectObservation(observation)
             }}
@@ -105,45 +128,55 @@ export function FlySightMap({
                 <div className="bird-popup-summary">
                   {observation.imageUrl && (
                     <button
-                      aria-label={`Open larger image of ${observation.slovenianName || observation.commonName}`}
+                      aria-label={`Open larger image of ${observation.speciesName}`}
                       className="bird-popup-image"
                       onClick={() => setSelectedImage({
                         src: observation.imageUrl,
-                        alt: observation.slovenianName || observation.commonName
+                        alt: observation.speciesName
                       })}
                       type="button"
                     >
                       <img
-                        alt={observation.slovenianName || observation.commonName}
+                        alt={observation.speciesName}
                         src={observation.imageUrl}
                       />
                     </button>
                   )}
                   <div className="bird-popup-names">
-                    <strong>{observation.slovenianName || observation.commonName}</strong>
-                    <span>{observation.commonName}</span>
-                    <span>{observation.scientificName || observation.speciesCode}</span>
+                    <div className="bird-popup-title">
+                      <strong>{observation.speciesName}</strong>
+                      <button
+                        aria-label={`${favoriteBirdIds.has(observation.birdId) ? "Remove" : "Save"} ${observation.speciesName} favorite`}
+                        className={`bookmark-button ${favoriteBirdIds.has(observation.birdId) ? "active" : ""}`}
+                        disabled={favoriteBusyId === observation.birdId}
+                        onClick={() => toggleFavorite(observation)}
+                        title={favoriteBirdIds.has(observation.birdId) ? "Remove from favorites" : "Save to favorites"}
+                        type="button"
+                      />
+                    </div>
+                    <span>{observation.scientificName || "Scientific name missing"}</span>
+                    <span>{observation.familyName ?? observation.source}</span>
                   </div>
                 </div>
                 <div className="bird-popup-details">
                   <dl className="bird-popup-column">
                     <div>
                       <dt>Location</dt>
-                      <dd>{observation.locationName || observation.city}</dd>
+                      <dd>{observation.locationName}</dd>
                     </div>
                     <div>
                       <dt>Observed</dt>
-                      <dd>{formatDateTime(observation.observedAt)}</dd>
+                      <dd>{formatDateTime(observation.eventDate)}</dd>
                     </div>
                   </dl>
                   <dl className="bird-popup-column">
                    <div>
                       <dt>Count</dt>
-                      <dd>{observation.count ?? "-"}</dd>
+                      <dd>{observation.observedCount}</dd>
                     </div>
                     <div>
-                      <dt>Status</dt>
-                      <dd>{observation.reviewed ? "Reviewed" : observation.valid ? "Valid" : "Pending"}</dd>
+                      <dt>Source</dt>
+                      <dd>{observation.source}</dd>
                     </div>
                   </dl>
                 </div>
