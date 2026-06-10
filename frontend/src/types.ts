@@ -74,3 +74,26 @@ export type DataSourceSettings = {
   lastSync: string | null;
   updatedAt: string;
 };
+
+export type PersonalObservation = {
+  id: number;
+  observedCount: number;
+  eventDate: string;
+  source: string;
+  metadata: Record<string, any>;
+  birdId: number;
+  birdName: string;
+  birdLatinName: string;
+  birdImageUrl: string;
+  locationId: number;
+  locationName: string;
+  latitude: number;
+  longitude: number;
+};
+
+export type BirdOption = {
+  id: number;
+  name: string;
+  latinName: string;
+};
+

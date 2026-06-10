@@ -6,7 +6,9 @@ import type {
   EbirdHotspot,
   EbirdObservation,
   Health,
-  UserProfile
+  UserProfile,
+  PersonalObservation,
+  BirdOption
 } from "./types";
 
 export const API_URL = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? "http://localhost" : window.location.origin);
@@ -189,3 +191,55 @@ export async function updateProfile(
   if (!response.ok) throw new Error(`Profile update failed with HTTP ${response.status}`);
   return response.json() as Promise<UserProfile>;
 }
+
+export async function fetchBirds(token: string): Promise<BirdOption[]> {
+  const response = await fetch(`${API_URL}/api/birds`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!response.ok) throw new Error(`Failed to load species with HTTP ${response.status}`);
+  return response.json() as Promise<BirdOption[]>;
+}
+
+export async function fetchPersonalObservations(token: string): Promise<PersonalObservation[]> {
+  const response = await fetch(`${API_URL}/api/me/observations`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!response.ok) throw new Error(`Failed to load observations with HTTP ${response.status}`);
+  return response.json() as Promise<PersonalObservation[]>;
+}
+
+export async function addPersonalObservation(
+  token: string,
+  observation: {
+    birdId?: number;
+    customBirdName?: string;
+    locationName: string;
+    latitude: number;
+    longitude: number;
+    observedCount: number;
+    eventDate: string;
+  }
+): Promise<PersonalObservation> {
+  const response = await fetch(`${API_URL}/api/me/observations`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(observation)
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || `Failed to save observation with HTTP ${response.status}`);
+  }
+  return response.json() as Promise<PersonalObservation>;
+}
+
+export async function deletePersonalObservation(token: string, id: number): Promise<void> {
+  const response = await fetch(`${API_URL}/api/me/observations/${id}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!response.ok) throw new Error(`Failed to delete observation with HTTP ${response.status}`);
+}
+

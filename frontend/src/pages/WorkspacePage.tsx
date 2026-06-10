@@ -5,6 +5,7 @@ import { AppLayout } from "../layouts/AppLayout";
 import { HomePage } from "./HomePage";
 import { AdminPage } from "./AdminPage";
 import { ProfilePage } from "./ProfilePage";
+import { MySightingsPage } from "./MySightingsPage";
 import { StatsGrid } from "../components/StatsGrid";
 
 type WorkspacePageProps = {
@@ -34,7 +35,7 @@ export function WorkspacePage({ health, user, token, counts, error, onLogout }: 
       {safeRoute === "data" && <DataPage counts={counts} error={error} />}
       {safeRoute === "admin" && isAdmin && <AdminPage health={health} token={token} />}
       {safeRoute === "cityinfra" && <CityInfraPage />}
-      {safeRoute === "my-sightings" && <MySightingsPage />}
+      {safeRoute === "my-sightings" && <MySightingsPage token={token} />}
       {safeRoute === "favorites" && <FavoritesPage />}
       {safeRoute === "profile" && <ProfilePage token={token} />}
     </AppLayout>
@@ -116,20 +117,6 @@ function CityInfraPage() {
   );
 }
 
-function MySightingsPage() {
-  return (
-    <section className="route-page">
-      <div className="page-heading">
-        <span>My Sightings</span>
-        <h1>Personal observations</h1>
-      </div>
-      <div className="route-panel">
-        <h2>Sightings log</h2>
-        <p style={{ color: "#52606d" }}>Track and manage your bird sightings here. Feature coming soon.</p>
-      </div>
-    </section>
-  );
-}
 
 function FavoritesPage() {
   return (
