@@ -1,4 +1,5 @@
 import type { Health, User, WorkspaceRoute } from "../types";
+import { isAdminUser } from "../types";
 import { StatusPill } from "./StatusPill";
 
 type NavbarProps = {
@@ -18,6 +19,9 @@ const navItems: Array<{ route: WorkspaceRoute; label: string }> = [
 ];
 
 export function Navbar({ health, user, activeRoute, onRouteChange, onLogout }: NavbarProps) {
+  const isAdmin = isAdminUser(user);
+  const visibleNavItems = isAdmin ? navItems : navItems.filter((item) => item.route === "explore");
+
   return (
     <nav className="navbar">
       <div className="brand">
@@ -29,7 +33,7 @@ export function Navbar({ health, user, activeRoute, onRouteChange, onLogout }: N
       </div>
 
       <div className="nav-tabs" aria-label="Workspace navigation">
-        {navItems.map((item) => (
+        {visibleNavItems.map((item) => (
           <button
             key={item.route}
             className={item.route === activeRoute ? "active" : ""}
@@ -47,6 +51,7 @@ export function Navbar({ health, user, activeRoute, onRouteChange, onLogout }: N
         <div className="profile-copy">
           <strong>{user?.name ?? "Demo user"}</strong>
           <span>{user?.email ?? "signed in"}</span>
+          <em>{isAdmin ? "Administrator" : "Standard user"}</em>
         </div>
         <button className="secondary compact" onClick={onLogout}>
           Logout

@@ -16,6 +16,10 @@ export type User = {
   role: string;
 };
 
+export function isAdminUser(user: User | null) {
+  return user?.role === "admin";
+}
+
 export type AuthResponse = {
   user: User;
   token: string;

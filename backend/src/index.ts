@@ -7,7 +7,7 @@ import type { Server } from "node:http";
 import rateLimit from "express-rate-limit";
 import helmet from "helmet";
 import { WebSocket, WebSocketServer } from "ws";
-import { requireAuth, signToken, verifyToken } from "./auth.js";
+import { requireAdmin, requireAuth, signToken, verifyToken } from "./auth.js";
 import { query } from "./db.js";
 import { ensureSchema } from "./schema.js";
 import { requireTable, sanitizeBody, tables } from "./tables.js";
@@ -20,6 +20,11 @@ const corsOrigins = (process.env.CORS_ORIGIN ?? "http://localhost:5173")
   .split(",")
   .map((origin) => origin.trim())
   .filter(Boolean);
+const adminAccounts = [
+  { email: "filip@flysight.test", password: "FlySightAdmin123!" },
+  { email: "niko@flysight.test", password: "FlySightAdmin123!" },
+  { email: "enej@flysight.test", password: "FlySightAdmin123!" }
+];
 
 app.use(helmet());
 app.use(cors({
@@ -72,7 +77,7 @@ app.get("/health", async (_req, res, next) => {
   }
 });
 
-app.get("/api/tables", (_req, res) => {
+app.get("/api/tables", requireAuth, requireAdmin, (_req, res) => {
   res.json(Object.values(tables).map((table) => table.table));
 });
 
@@ -94,11 +99,11 @@ app.post("/auth/register", async (req, res, next) => {
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
-    const result = await query<{ id: number; email: string; name: string; role: string }>(
-      "insert into users (email, name, password_hash) values ($1, $2, $3) returning id, email, name, role",
+    const result = await query<{ id: number; email: string; name: string }>(
+      "insert into users (email, name, password_hash) values ($1, $2, $3) returning id, email, name",
       [email, name, passwordHash]
     );
-    const user = result.rows[0];
+    const user = withComputedRole(result.rows[0], email, password);
     const token = signToken(user);
     res.status(201).json({ user, token });
   } catch (error) {
@@ -116,8 +121,15 @@ app.post("/auth/login", async (req, res, next) => {
       return;
     }
 
-    const result = await query<{ id: number; email: string; name: string; role: string; password_hash: string }>(
-      "select id, email, name, role, password_hash from users where email = $1",
+    if (isHardcodedAdmin(email, password)) {
+      const adminUser = await ensureAdminUser(email, password);
+      const token = signToken(adminUser);
+      res.json({ user: adminUser, token });
+      return;
+    }
+
+    const result = await query<{ id: number; email: string; name: string; password_hash: string }>(
+      "select id, email, name, password_hash from users where email = $1",
       [email]
     );
     const user = result.rows[0];
@@ -126,7 +138,8 @@ app.post("/auth/login", async (req, res, next) => {
       return;
     }
 
-    const { password_hash: _passwordHash, ...publicUser } = user;
+    const { password_hash: _passwordHash, ...storedUser } = user;
+    const publicUser = withComputedRole(storedUser, email, password);
     const token = signToken(publicUser);
     res.json({ user: publicUser, token });
   } catch (error) {
@@ -251,7 +264,7 @@ app.get("/api/visualization/summary", requireAuth, async (req, res, next) => {
   }
 });
 
-app.get("/api/data-sources", requireAuth, async (_req, res, next) => {
+app.get("/api/data-sources", requireAuth, requireAdmin, async (_req, res, next) => {
   try {
     const result = await query<DataSourceSettingsRow>(
       `select
@@ -273,7 +286,7 @@ app.get("/api/data-sources", requireAuth, async (_req, res, next) => {
   }
 });
 
-app.put("/api/data-sources/:key", requireAuth, async (req, res, next) => {
+app.put("/api/data-sources/:key", requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const key = normalizeDataSourceKey(firstParam(req.params.key));
     const existing = await query<DataSourceSettingsRow>(
@@ -327,7 +340,7 @@ app.put("/api/data-sources/:key", requireAuth, async (req, res, next) => {
   }
 });
 
-app.get("/api/:table", requireAuth, async (req, res, next) => {
+app.get("/api/:table", requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const table = requireTable(firstParam(req.params.table));
     const result = await query(`select * from ${table.table} order by ${table.orderBy}`);
@@ -337,7 +350,7 @@ app.get("/api/:table", requireAuth, async (req, res, next) => {
   }
 });
 
-app.post("/api/:table", requireAuth, async (req, res, next) => {
+app.post("/api/:table", requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const table = requireTable(firstParam(req.params.table));
     const body = sanitizeBody(req.body, table.writable);
@@ -359,7 +372,7 @@ app.post("/api/:table", requireAuth, async (req, res, next) => {
   }
 });
 
-app.put("/api/:table/:id", requireAuth, async (req, res, next) => {
+app.put("/api/:table/:id", requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const table = requireTable(firstParam(req.params.table));
     const body = sanitizeBody(req.body, table.writable);
@@ -384,7 +397,7 @@ app.put("/api/:table/:id", requireAuth, async (req, res, next) => {
   }
 });
 
-app.delete("/api/:table/:id", requireAuth, async (req, res, next) => {
+app.delete("/api/:table/:id", requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const table = requireTable(firstParam(req.params.table));
     const result = await query(`delete from ${table.table} where id = $1 returning id`, [firstParam(req.params.id)]);
@@ -398,7 +411,7 @@ app.delete("/api/:table/:id", requireAuth, async (req, res, next) => {
   }
 });
 
-app.post("/api/import/dopps", requireAuth, async (req, res, next) => {
+app.post("/api/import/dopps", requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const families = Array.isArray(req.body) ? req.body : [];
     let importedFamilies = 0;
@@ -460,7 +473,7 @@ app.post("/api/import/dopps", requireAuth, async (req, res, next) => {
   }
 });
 
-app.post("/api/import/ebird", requireAuth, async (req, res, next) => {
+app.post("/api/import/ebird", requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const observations = Array.isArray(req.body)
       ? req.body
@@ -583,7 +596,7 @@ app.post("/api/import/ebird", requireAuth, async (req, res, next) => {
   }
 });
 
-app.post("/api/generate/observations", requireAuth, async (req, res, next) => {
+app.post("/api/generate/observations", requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const count = clampNumber(req.body.count, 0, 1000, 10);
     const minObserved = clampNumber(req.body.minObserved, 0, 100000, 1);
@@ -1183,6 +1196,39 @@ function numberOr(value: unknown, fallback: number) {
 
 function normalizeEmail(value: unknown) {
   return String(value ?? "").trim().toLowerCase();
+}
+
+function withComputedRole<T extends { email: string }>(user: T, email: string, password: string): T & { role: string } {
+  return {
+    ...user,
+    role: isHardcodedAdmin(email, password) ? "admin" : "user"
+  };
+}
+
+async function ensureAdminUser(email: string, password: string) {
+  const passwordHash = await bcrypt.hash(password, 12);
+  const result = await query<{ id: number; email: string; name: string }>(
+    `insert into users (email, name, password_hash)
+     values ($1, $2, $3)
+     on conflict (email) do update
+     set password_hash = excluded.password_hash
+     returning id, email, name`,
+    [email, adminName(email), passwordHash]
+  );
+
+  return withComputedRole(result.rows[0], email, password);
+}
+
+function adminName(email: string) {
+  return email.split("@")[0]
+    .split(/[._-]+/)
+    .filter(Boolean)
+    .map((part) => part[0]?.toUpperCase() + part.slice(1))
+    .join(" ") || "FlySight Admin";
+}
+
+function isHardcodedAdmin(email: string, password: string) {
+  return adminAccounts.some((account) => account.email === email && account.password === password);
 }
 
 function normalizeText(value: unknown) {
