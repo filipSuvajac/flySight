@@ -56,6 +56,7 @@ app.get("/", (_req, res) => {
       "/api/tables",
       "/api/visualization/observations",
       "/api/visualization/summary",
+      "/api/me/favorites",
       "/api/data-sources",
       "/api/:table",
       "/api/import/dopps",
@@ -192,8 +193,62 @@ app.put("/api/me/profile", requireAuth, async (req, res, next) => {
       return;
     }
 
+    const name = normalizeText(req.body.name);
+    const email = normalizeEmail(req.body.email);
     const bio = normalizeText(req.body.bio);
     const location = normalizeText(req.body.location);
+    const currentPassword = String(req.body.currentPassword ?? "");
+    const newPassword = String(req.body.newPassword ?? "");
+
+    if (!name || !email) {
+      res.status(400).json({ error: "Name and email are required." });
+      return;
+    }
+
+    const existingEmail = await query<{ id: number }>(
+      "select id from users where email = $1 and id <> $2",
+      [email, userId]
+    );
+    if (existingEmail.rowCount) {
+      res.status(409).json({ error: "User with this email already exists." });
+      return;
+    }
+
+    if (newPassword) {
+      if (newPassword.length < 8) {
+        res.status(400).json({ error: "New password must be at least 8 characters." });
+        return;
+      }
+      if (!currentPassword) {
+        res.status(400).json({ error: "Current password is required to change password." });
+        return;
+      }
+
+      const passwordResult = await query<{ password_hash: string }>(
+        "select password_hash from users where id = $1",
+        [userId]
+      );
+      const passwordHash = passwordResult.rows[0]?.password_hash;
+      if (!passwordHash || !(await bcrypt.compare(currentPassword, passwordHash))) {
+        res.status(401).json({ error: "Current password is incorrect." });
+        return;
+      }
+    }
+
+    const passwordSetClause = newPassword ? ", password_hash = $4" : "";
+    const updateValues = newPassword
+      ? [name, email, userId, await bcrypt.hash(newPassword, 12)]
+      : [name, email, userId];
+
+    await query(
+      `update users
+       set name = $1,
+           email = $2,
+           updated_at = now()
+           ${passwordSetClause}
+       where id = $3`,
+      updateValues
+    );
 
     await query(
       `insert into user_profiles (user_id, bio, location)
@@ -219,7 +274,19 @@ app.put("/api/me/profile", requireAuth, async (req, res, next) => {
       [userId]
     );
 
-    res.json(result.rows[0]);
+    const updatedProfile = result.rows[0];
+    const updatedUser = {
+      id: userId,
+      email: updatedProfile.email,
+      name: updatedProfile.name,
+      role: req.user?.role === "admin" ? "admin" : "user"
+    };
+
+    res.json({
+      ...updatedProfile,
+      user: updatedUser,
+      token: signToken(updatedUser)
+    });
   } catch (error) {
     next(error);
   }
@@ -229,6 +296,95 @@ app.get("/api/birds", requireAuth, async (req, res, next) => {
   try {
     const result = await query("select id, name, latin_name as \"latinName\" from bird_info order by name");
     res.json(result.rows);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/me/favorites", requireAuth, async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
+    const result = await query<FavoriteBirdRow>(
+      `select
+         b.id as "birdId",
+         b.name as "birdName",
+         b.latin_name as "birdLatinName",
+         b.description as "birdDescription",
+         b.image_url as "birdImageUrl",
+         b.source,
+         f.name as "familyName",
+         f.latin_name as "familyLatinName",
+         fb.created_at as "createdAt"
+       from favorite_bird fb
+       join bird_info b on b.id = fb.bird_id
+       left join bird_family f on f.id = b.family_id
+       where fb.user_id = $1
+       order by fb.created_at desc, b.name asc`,
+      [userId]
+    );
+
+    res.json({ favorites: result.rows });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/me/favorites", requireAuth, async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+    const birdId = Number(req.body.birdId);
+    if (!userId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    if (!Number.isInteger(birdId) || birdId <= 0) {
+      res.status(400).json({ error: "birdId is required." });
+      return;
+    }
+
+    const bird = await query<{ id: number }>("select id from bird_info where id = $1", [birdId]);
+    if (bird.rowCount === 0) {
+      res.status(404).json({ error: "Bird species not found." });
+      return;
+    }
+
+    await query(
+      `insert into favorite_bird (user_id, bird_id)
+       values ($1, $2)
+       on conflict (user_id, bird_id) do nothing`,
+      [userId, birdId]
+    );
+
+    res.status(201).json({ birdId, isFavorite: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/me/favorites/:birdId", requireAuth, async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+    const birdId = Number(firstParam(req.params.birdId));
+    if (!userId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    if (!Number.isInteger(birdId) || birdId <= 0) {
+      res.status(400).json({ error: "Invalid bird id." });
+      return;
+    }
+
+    await query(
+      "delete from favorite_bird where user_id = $1 and bird_id = $2",
+      [userId, birdId]
+    );
+
+    res.status(204).send();
   } catch (error) {
     next(error);
   }
@@ -387,15 +543,17 @@ app.get("/api/visualization/observations", requireAuth, async (req, res, next) =
          l.id as "locationId",
          l.name as "locationName",
          l.latitude,
-         l.longitude
+         l.longitude,
+         (fb.bird_id is not null) as "isFavorite"
        from observation o
        join bird_info b on b.id = o.bird_id
        left join bird_family f on f.id = b.family_id
        join location l on l.id = o.location_id
+       left join favorite_bird fb on fb.bird_id = b.id and fb.user_id = $${filters.params.length + 2}
        ${filters.whereClause}
        order by o.event_date desc, o.id desc
        limit $${filters.params.length + 1}`,
-      [...filters.params, limit]
+      [...filters.params, limit, req.user?.id]
     );
 
     res.json({ observations: result.rows });
@@ -1043,6 +1201,19 @@ type VisualizationObservationRow = {
   locationName: string;
   latitude: number;
   longitude: number;
+  isFavorite: boolean;
+};
+
+type FavoriteBirdRow = {
+  birdId: number;
+  birdName: string;
+  birdLatinName: string;
+  birdDescription: string;
+  birdImageUrl: string;
+  source: string;
+  familyName: string | null;
+  familyLatinName: string | null;
+  createdAt: string;
 };
 
 type ChartCountRow = {

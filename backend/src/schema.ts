@@ -106,6 +106,13 @@ export async function ensureSchema() {
       updated_at timestamptz not null default now()
     );
 
+    create table if not exists favorite_bird (
+      user_id integer not null references users(id) on delete cascade,
+      bird_id integer not null references bird_info(id) on delete cascade,
+      created_at timestamptz not null default now(),
+      primary key (user_id, bird_id)
+    );
+
     alter table observation add column if not exists user_id integer references users(id) on delete cascade;
 
     create or replace function set_updated_at()

@@ -48,7 +48,7 @@ export function EbirdPanel({
   const activeRecentDays = recentDays ?? internalRecentDays;
   const minDate = useMemo(() => {
     const date = new Date();
-    date.setDate(date.getDate() - 30);
+    date.setFullYear(date.getFullYear() - 10);
     return date.toISOString().slice(0, 10);
   }, []);
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);

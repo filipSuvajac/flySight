@@ -1,15 +1,21 @@
 import { useEffect, useState } from "react";
 import { fetchProfile, updateProfile } from "../api";
-import type { UserProfile } from "../types";
+import type { User, UserProfile } from "../types";
 
 type ProfilePageProps = {
   token: string;
+  onSessionChange: (token: string, user: User) => void;
 };
 
-export function ProfilePage({ token }: ProfilePageProps) {
+export function ProfilePage({ token, onSessionChange }: ProfilePageProps) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
   const [bio, setBio] = useState("");
   const [location, setLocation] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
@@ -21,6 +27,8 @@ export function ProfilePage({ token }: ProfilePageProps) {
     fetchProfile(token)
       .then((data) => {
         setProfile(data);
+        setName(data.name);
+        setEmail(data.email);
         setBio(data.bio);
         setLocation(data.location);
       })
@@ -37,11 +45,37 @@ export function ProfilePage({ token }: ProfilePageProps) {
     setIsSaving(true);
     setError("");
     setSuccessMessage("");
-    updateProfile(token, { bio, location })
+    if (newPassword || confirmPassword || currentPassword) {
+      if (newPassword !== confirmPassword) {
+        setIsSaving(false);
+        setError("New passwords do not match.");
+        return;
+      }
+      if (newPassword.length < 8) {
+        setIsSaving(false);
+        setError("New password must be at least 8 characters.");
+        return;
+      }
+    }
+
+    updateProfile(token, {
+      name,
+      email,
+      bio,
+      location,
+      currentPassword: newPassword ? currentPassword : undefined,
+      newPassword: newPassword || undefined
+    })
       .then((updated) => {
         setProfile(updated);
+        setName(updated.name);
+        setEmail(updated.email);
         setBio(updated.bio);
         setLocation(updated.location);
+        setCurrentPassword("");
+        setNewPassword("");
+        setConfirmPassword("");
+        onSessionChange(updated.token, updated.user);
         setSuccessMessage("Profile updated successfully!");
         setTimeout(() => setSuccessMessage(""), 4000);
       })
@@ -95,9 +129,9 @@ export function ProfilePage({ token }: ProfilePageProps) {
               <label>Name</label>
               <input
                 type="text"
-                value={profile?.name || ""}
-                disabled
-                style={{ background: "#f1f5f9", cursor: "not-allowed", border: "1px solid #cbd5e1" }}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Your name"
               />
             </div>
 
@@ -105,9 +139,9 @@ export function ProfilePage({ token }: ProfilePageProps) {
               <label>Email</label>
               <input
                 type="email"
-                value={profile?.email || ""}
-                disabled
-                style={{ background: "#f1f5f9", cursor: "not-allowed", border: "1px solid #cbd5e1" }}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
               />
             </div>
 
@@ -154,6 +188,43 @@ export function ProfilePage({ token }: ProfilePageProps) {
                 onChange={(e) => setLocation(e.target.value)}
                 placeholder="City, Country"
               />
+            </div>
+
+            <div className="profile-password-section">
+              <h3>Change password</h3>
+              <div className="field">
+                <label htmlFor="currentPassword">Current password</label>
+                <input
+                  id="currentPassword"
+                  type="password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  placeholder="Current password"
+                  autoComplete="current-password"
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="newPassword">New password</label>
+                <input
+                  id="newPassword"
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="At least 8 characters"
+                  autoComplete="new-password"
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="confirmPassword">Confirm new password</label>
+                <input
+                  id="confirmPassword"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Repeat new password"
+                  autoComplete="new-password"
+                />
+              </div>
             </div>
 
             <button type="submit" className="primary-action" disabled={isSaving} style={{ marginTop: "8px" }}>

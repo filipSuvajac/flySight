@@ -7,8 +7,11 @@ import type {
   EbirdObservation,
   Health,
   UserProfile,
+  UserProfileUpdate,
   PersonalObservation,
-  BirdOption
+  BirdOption,
+  VisualizationObservation,
+  FavoriteBird
 } from "./types";
 
 export const API_URL = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? "http://localhost" : window.location.origin);
@@ -236,8 +239,15 @@ export async function fetchProfile(token: string): Promise<UserProfile> {
 
 export async function updateProfile(
   token: string,
-  profile: { bio: string; location: string }
-): Promise<UserProfile> {
+  profile: {
+    name: string;
+    email: string;
+    bio: string;
+    location: string;
+    currentPassword?: string;
+    newPassword?: string;
+  }
+): Promise<UserProfileUpdate> {
   const response = await fetch(`${API_URL}/api/me/profile`, {
     method: "PUT",
     headers: {
@@ -246,8 +256,11 @@ export async function updateProfile(
     },
     body: JSON.stringify(profile)
   });
-  if (!response.ok) throw new Error(`Profile update failed with HTTP ${response.status}`);
-  return response.json() as Promise<UserProfile>;
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || `Profile update failed with HTTP ${response.status}`);
+  }
+  return response.json() as Promise<UserProfileUpdate>;
 }
 
 export async function fetchBirds(token: string): Promise<BirdOption[]> {
