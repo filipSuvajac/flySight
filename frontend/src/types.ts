@@ -1,6 +1,19 @@
 export type AuthMode = "login" | "register";
 
-export type WorkspaceRoute = "explore" | "analytics" | "data" | "admin" | "cityinfra";
+export type WorkspaceRoute = "explore" | "analytics" | "data" | "admin" | "cityinfra" | "my-sightings" | "favorites" | "profile";
+
+export type UserProfile = {
+  name: string;
+  email: string;
+  role: string;
+  bio: string;
+  location: string;
+};
+
+export type UserProfileUpdate = UserProfile & {
+  user: User;
+  token: string;
+};
 
 export type Health = {
   status: string;
@@ -43,6 +56,37 @@ export type EbirdObservation = {
   reviewed: boolean;
 };
 
+export type VisualizationObservation = {
+  observationId: number;
+  observedCount: number;
+  eventDate: string;
+  source: string;
+  metadata: Record<string, unknown>;
+  birdId: number;
+  speciesName: string;
+  scientificName: string;
+  imageUrl: string;
+  familyName: string | null;
+  familyLatinName: string | null;
+  locationId: number;
+  locationName: string;
+  latitude: number;
+  longitude: number;
+  isFavorite: boolean;
+};
+
+export type FavoriteBird = {
+  birdId: number;
+  birdName: string;
+  birdLatinName: string;
+  birdDescription: string;
+  birdImageUrl: string;
+  source: string;
+  familyName: string | null;
+  familyLatinName: string | null;
+  createdAt: string;
+};
+
 export type EbirdHotspot = {
   id: string;
   name: string;
@@ -66,3 +110,26 @@ export type DataSourceSettings = {
   lastSync: string | null;
   updatedAt: string;
 };
+
+export type PersonalObservation = {
+  id: number;
+  observedCount: number;
+  eventDate: string;
+  source: string;
+  metadata: Record<string, any>;
+  birdId: number;
+  birdName: string;
+  birdLatinName: string;
+  birdImageUrl: string;
+  locationId: number;
+  locationName: string;
+  latitude: number;
+  longitude: number;
+};
+
+export type BirdOption = {
+  id: number;
+  name: string;
+  latinName: string;
+};
+

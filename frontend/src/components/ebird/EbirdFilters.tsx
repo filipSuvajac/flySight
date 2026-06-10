@@ -66,6 +66,8 @@ export function EbirdFilters({
             <select value={sourceFilter} onChange={(event) => onSourceChange(event.target.value)}>
               <option value="">All sources</option>
               <option value="ebird">eBird</option>
+              <option value="generated">Generated</option>
+              <option value="user">User</option>
             </select>
           </label>
         </>
@@ -76,6 +78,9 @@ export function EbirdFilters({
           <option value="7">Last 7 days</option>
           <option value="14">Last 14 days</option>
           <option value="30">Last 30 days</option>
+          <option value="60">Last 60 days</option>
+          <option value="90">Last 90 days</option>
+          <option value="all">All time</option>
         </select>
       </label>
     </div>

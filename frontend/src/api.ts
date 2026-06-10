@@ -5,7 +5,13 @@ import type {
   DataSourceSettings,
   EbirdHotspot,
   EbirdObservation,
-  Health
+  Health,
+  UserProfile,
+  UserProfileUpdate,
+  PersonalObservation,
+  BirdOption,
+  VisualizationObservation,
+  FavoriteBird
 } from "./types";
 
 export const API_URL = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? "http://localhost" : window.location.origin);
@@ -75,6 +81,63 @@ export async function fetchRecentEbirdObservations(token: string, days = 30, max
   if (!response.ok) throw new Error(`eBird observations failed with HTTP ${response.status}`);
   const payload = (await response.json()) as { observations?: EbirdObservation[] };
   return Array.isArray(payload.observations) ? payload.observations : [];
+}
+
+export async function fetchVisualizationObservations(
+  token: string,
+  filters: { species?: string; location?: string; date?: string; source?: string },
+  recentDays = "30",
+  limit = 1000
+): Promise<VisualizationObservation[]> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (filters.species) params.set("species", filters.species);
+  if (filters.location) params.set("location", filters.location);
+  if (filters.date) {
+    params.set("from", filters.date);
+    params.set("to", filters.date);
+  } else if (recentDays !== "all") {
+    const days = Number(recentDays) || 30;
+    const from = new Date();
+    from.setDate(from.getDate() - days);
+    params.set("from", from.toISOString().slice(0, 10));
+  }
+  if (filters.source) params.set("source", filters.source);
+
+  const response = await fetch(`${API_URL}/api/visualization/observations?${params.toString()}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!response.ok) throw new Error(`Observation visualization failed with HTTP ${response.status}`);
+  const payload = (await response.json()) as { observations?: VisualizationObservation[] };
+  return Array.isArray(payload.observations) ? payload.observations : [];
+}
+
+export async function fetchFavoriteBirds(token: string): Promise<FavoriteBird[]> {
+  const response = await fetch(`${API_URL}/api/me/favorites`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!response.ok) throw new Error(`Failed to load favorites with HTTP ${response.status}`);
+  const payload = (await response.json()) as { favorites?: FavoriteBird[] };
+  return Array.isArray(payload.favorites) ? payload.favorites : [];
+}
+
+export async function addFavoriteBird(token: string, birdId: number): Promise<void> {
+  const response = await fetch(`${API_URL}/api/me/favorites`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ birdId })
+  });
+  if (!response.ok) throw new Error(`Failed to save favorite with HTTP ${response.status}`);
+}
+
+export async function removeFavoriteBird(token: string, birdId: number): Promise<void> {
+  const response = await fetch(`${API_URL}/api/me/favorites/${birdId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!response.ok) throw new Error(`Failed to remove favorite with HTTP ${response.status}`);
 }
 
 export async function fetchEbirdHotspotObservations(
@@ -164,3 +227,89 @@ export async function runDataSourceAction(
   const synced = await updateDataSource(token, source.key, { markSynced: true });
   return { message: `${source.name} marked as synced.`, source: synced };
 }
+
+export async function fetchProfile(token: string): Promise<UserProfile> {
+  const response = await fetch(`${API_URL}/api/me/profile`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!response.ok) throw new Error(`Profile load failed with HTTP ${response.status}`);
+  return response.json() as Promise<UserProfile>;
+}
+
+export async function updateProfile(
+  token: string,
+  profile: {
+    name: string;
+    email: string;
+    bio: string;
+    location: string;
+    currentPassword?: string;
+    newPassword?: string;
+  }
+): Promise<UserProfileUpdate> {
+  const response = await fetch(`${API_URL}/api/me/profile`, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(profile)
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || `Profile update failed with HTTP ${response.status}`);
+  }
+  return response.json() as Promise<UserProfileUpdate>;
+}
+
+export async function fetchBirds(token: string): Promise<BirdOption[]> {
+  const response = await fetch(`${API_URL}/api/birds`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!response.ok) throw new Error(`Failed to load species with HTTP ${response.status}`);
+  return response.json() as Promise<BirdOption[]>;
+}
+
+export async function fetchPersonalObservations(token: string): Promise<PersonalObservation[]> {
+  const response = await fetch(`${API_URL}/api/me/observations`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!response.ok) throw new Error(`Failed to load observations with HTTP ${response.status}`);
+  return response.json() as Promise<PersonalObservation[]>;
+}
+
+export async function addPersonalObservation(
+  token: string,
+  observation: {
+    birdId?: number;
+    customBirdName?: string;
+    locationName: string;
+    latitude: number;
+    longitude: number;
+    observedCount: number;
+    eventDate: string;
+  }
+): Promise<PersonalObservation> {
+  const response = await fetch(`${API_URL}/api/me/observations`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(observation)
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || `Failed to save observation with HTTP ${response.status}`);
+  }
+  return response.json() as Promise<PersonalObservation>;
+}
+
+export async function deletePersonalObservation(token: string, id: number): Promise<void> {
+  const response = await fetch(`${API_URL}/api/me/observations/${id}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!response.ok) throw new Error(`Failed to delete observation with HTTP ${response.status}`);
+}
+

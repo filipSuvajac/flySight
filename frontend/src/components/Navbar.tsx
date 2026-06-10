@@ -10,7 +10,7 @@ type NavbarProps = {
   onLogout: () => void;
 };
 
-const navItems: Array<{ route: WorkspaceRoute; label: string }> = [
+const adminNavItems: Array<{ route: WorkspaceRoute; label: string }> = [
   { route: "explore", label: "Explore" },
   { route: "analytics", label: "Analytics" },
   { route: "data", label: "Data" },
@@ -18,9 +18,16 @@ const navItems: Array<{ route: WorkspaceRoute; label: string }> = [
   { route: "cityinfra", label: "CityInfra" }
 ];
 
+const userNavItems: Array<{ route: WorkspaceRoute; label: string }> = [
+  { route: "explore", label: "Explore" },
+  { route: "my-sightings", label: "My Sightings" },
+  { route: "favorites", label: "Favorites" },
+  { route: "profile", label: "Profile" }
+];
+
 export function Navbar({ health, user, activeRoute, onRouteChange, onLogout }: NavbarProps) {
   const isAdmin = isAdminUser(user);
-  const visibleNavItems = isAdmin ? navItems : navItems.filter((item) => item.route === "explore");
+  const visibleItems = isAdmin ? adminNavItems : userNavItems;
 
   return (
     <nav className="navbar">
@@ -33,7 +40,7 @@ export function Navbar({ health, user, activeRoute, onRouteChange, onLogout }: N
       </div>
 
       <div className="nav-tabs" aria-label="Workspace navigation">
-        {visibleNavItems.map((item) => (
+        {visibleItems.map((item) => (
           <button
             key={item.route}
             className={item.route === activeRoute ? "active" : ""}

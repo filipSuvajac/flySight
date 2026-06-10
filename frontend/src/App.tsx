@@ -90,6 +90,11 @@ export function App() {
       token={token}
       counts={counts}
       error={error}
+      onSessionChange={(nextToken, nextUser) => {
+        storeSession(nextToken, nextUser);
+        setToken(nextToken);
+        setUser(nextUser);
+      }}
       onLogout={handleLogout}
     />
   );

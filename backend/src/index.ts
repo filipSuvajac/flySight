@@ -56,6 +56,7 @@ app.get("/", (_req, res) => {
       "/api/tables",
       "/api/visualization/observations",
       "/api/visualization/summary",
+      "/api/me/favorites",
       "/api/data-sources",
       "/api/:table",
       "/api/import/dopps",
@@ -151,6 +152,376 @@ app.get("/auth/me", requireAuth, (req, res) => {
   res.json({ user: req.user });
 });
 
+app.get("/api/me/profile", requireAuth, async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
+    const result = await query<{
+      name: string;
+      email: string;
+      role: string;
+      bio: string;
+      location: string;
+    }>(
+      `select u.name, u.email, u.role, coalesce(p.bio, '') as bio, coalesce(p.location, '') as location
+       from users u
+       left join user_profiles p on p.user_id = u.id
+       where u.id = $1`,
+      [userId]
+    );
+
+    if (result.rowCount === 0) {
+      res.status(404).json({ error: "User not found." });
+      return;
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.put("/api/me/profile", requireAuth, async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
+    const name = normalizeText(req.body.name);
+    const email = normalizeEmail(req.body.email);
+    const bio = normalizeText(req.body.bio);
+    const location = normalizeText(req.body.location);
+    const currentPassword = String(req.body.currentPassword ?? "");
+    const newPassword = String(req.body.newPassword ?? "");
+
+    if (!name || !email) {
+      res.status(400).json({ error: "Name and email are required." });
+      return;
+    }
+
+    const existingEmail = await query<{ id: number }>(
+      "select id from users where email = $1 and id <> $2",
+      [email, userId]
+    );
+    if (existingEmail.rowCount) {
+      res.status(409).json({ error: "User with this email already exists." });
+      return;
+    }
+
+    if (newPassword) {
+      if (newPassword.length < 8) {
+        res.status(400).json({ error: "New password must be at least 8 characters." });
+        return;
+      }
+      if (!currentPassword) {
+        res.status(400).json({ error: "Current password is required to change password." });
+        return;
+      }
+
+      const passwordResult = await query<{ password_hash: string }>(
+        "select password_hash from users where id = $1",
+        [userId]
+      );
+      const passwordHash = passwordResult.rows[0]?.password_hash;
+      if (!passwordHash || !(await bcrypt.compare(currentPassword, passwordHash))) {
+        res.status(401).json({ error: "Current password is incorrect." });
+        return;
+      }
+    }
+
+    const passwordSetClause = newPassword ? ", password_hash = $4" : "";
+    const updateValues = newPassword
+      ? [name, email, userId, await bcrypt.hash(newPassword, 12)]
+      : [name, email, userId];
+
+    await query(
+      `update users
+       set name = $1,
+           email = $2,
+           updated_at = now()
+           ${passwordSetClause}
+       where id = $3`,
+      updateValues
+    );
+
+    await query(
+      `insert into user_profiles (user_id, bio, location)
+       values ($1, $2, $3)
+       on conflict (user_id) do update
+       set bio = excluded.bio,
+           location = excluded.location,
+           updated_at = now()`,
+      [userId, bio, location]
+    );
+
+    const result = await query<{
+      name: string;
+      email: string;
+      role: string;
+      bio: string;
+      location: string;
+    }>(
+      `select u.name, u.email, u.role, coalesce(p.bio, '') as bio, coalesce(p.location, '') as location
+       from users u
+       left join user_profiles p on p.user_id = u.id
+       where u.id = $1`,
+      [userId]
+    );
+
+    const updatedProfile = result.rows[0];
+    const updatedUser = {
+      id: userId,
+      email: updatedProfile.email,
+      name: updatedProfile.name,
+      role: req.user?.role === "admin" ? "admin" : "user"
+    };
+
+    res.json({
+      ...updatedProfile,
+      user: updatedUser,
+      token: signToken(updatedUser)
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/birds", requireAuth, async (req, res, next) => {
+  try {
+    const result = await query("select id, name, latin_name as \"latinName\" from bird_info order by name");
+    res.json(result.rows);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/me/favorites", requireAuth, async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
+    const result = await query<FavoriteBirdRow>(
+      `select
+         b.id as "birdId",
+         b.name as "birdName",
+         b.latin_name as "birdLatinName",
+         b.description as "birdDescription",
+         b.image_url as "birdImageUrl",
+         b.source,
+         f.name as "familyName",
+         f.latin_name as "familyLatinName",
+         fb.created_at as "createdAt"
+       from favorite_bird fb
+       join bird_info b on b.id = fb.bird_id
+       left join bird_family f on f.id = b.family_id
+       where fb.user_id = $1
+       order by fb.created_at desc, b.name asc`,
+      [userId]
+    );
+
+    res.json({ favorites: result.rows });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/me/favorites", requireAuth, async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+    const birdId = Number(req.body.birdId);
+    if (!userId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    if (!Number.isInteger(birdId) || birdId <= 0) {
+      res.status(400).json({ error: "birdId is required." });
+      return;
+    }
+
+    const bird = await query<{ id: number }>("select id from bird_info where id = $1", [birdId]);
+    if (bird.rowCount === 0) {
+      res.status(404).json({ error: "Bird species not found." });
+      return;
+    }
+
+    await query(
+      `insert into favorite_bird (user_id, bird_id)
+       values ($1, $2)
+       on conflict (user_id, bird_id) do nothing`,
+      [userId, birdId]
+    );
+
+    res.status(201).json({ birdId, isFavorite: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/me/favorites/:birdId", requireAuth, async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+    const birdId = Number(firstParam(req.params.birdId));
+    if (!userId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    if (!Number.isInteger(birdId) || birdId <= 0) {
+      res.status(400).json({ error: "Invalid bird id." });
+      return;
+    }
+
+    await query(
+      "delete from favorite_bird where user_id = $1 and bird_id = $2",
+      [userId, birdId]
+    );
+
+    res.status(204).send();
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/me/observations", requireAuth, async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    const result = await query(
+      `select o.id, o.observed_count as "observedCount", o.event_date::text as "eventDate", o.source, o.metadata,
+              b.id as "birdId", b.name as "birdName", b.latin_name as "birdLatinName", b.image_url as "birdImageUrl",
+              l.id as "locationId", l.name as "locationName", l.latitude, l.longitude
+       from observation o
+       join bird_info b on b.id = o.bird_id
+       join location l on l.id = o.location_id
+       where o.user_id = $1
+       order by o.event_date desc, o.id desc`,
+      [userId]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/me/observations", requireAuth, async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
+    let birdId = req.body.birdId ? Number(req.body.birdId) : null;
+    const customBirdName = normalizeText(req.body.customBirdName);
+    const locationName = normalizeText(req.body.locationName);
+    const latitude = Number(req.body.latitude);
+    const longitude = Number(req.body.longitude);
+    const observedCount = Math.max(1, Number(req.body.observedCount ?? 1));
+    const eventDate = normalizeText(req.body.eventDate);
+
+    if ((!birdId && !customBirdName) || !locationName || isNaN(latitude) || isNaN(longitude) || !eventDate) {
+      res.status(400).json({ error: "Missing or invalid bird species, locationName, latitude, longitude or eventDate." });
+      return;
+    }
+
+    // 1. Resolve or create bird
+    if (!birdId && customBirdName) {
+      const existingBird = await query<{ id: number }>(
+        "select id from bird_info where lower(name) = lower($1) limit 1",
+        [customBirdName]
+      );
+      if (existingBird.rows.length > 0) {
+        birdId = existingBird.rows[0].id;
+      } else {
+        const newBird = await query<{ id: number }>(
+          "insert into bird_info (name, source) values ($1, 'user') returning id",
+          [customBirdName]
+        );
+        birdId = newBird.rows[0].id;
+      }
+    } else if (birdId) {
+      const bird = await query("select id from bird_info where id = $1", [birdId]);
+      if (bird.rowCount === 0) {
+        res.status(400).json({ error: "Selected bird species does not exist." });
+        return;
+      }
+    }
+
+    // 2. Find or create location
+    let locationResult = await query<{ id: number }>(
+      "select id from location where name = $1 and latitude = $2 and longitude = $3 limit 1",
+      [locationName, latitude, longitude]
+    );
+    if (locationResult.rowCount === 0) {
+      locationResult = await query<{ id: number }>(
+        "insert into location (name, latitude, longitude, metadata) values ($1, $2, $3, $4) returning id",
+        [locationName, latitude, longitude, { source: "user" }]
+      );
+    }
+    const locationId = locationResult.rows[0].id;
+
+    // 3. Create observation
+    const result = await query<{ id: number }>(
+      `insert into observation (bird_id, location_id, user_id, observed_count, event_date, source, metadata)
+       values ($1, $2, $3, $4, $5::date, 'user', '{}'::jsonb)
+       returning id`,
+      [birdId, locationId, userId, observedCount, eventDate]
+    );
+
+    // 4. Fetch the full observation to return
+    const fullObs = await query(
+      `select o.id, o.observed_count as "observedCount", o.event_date::text as "eventDate", o.source, o.metadata,
+              b.id as "birdId", b.name as "birdName", b.latin_name as "birdLatinName", b.image_url as "birdImageUrl",
+              l.id as "locationId", l.name as "locationName", l.latitude, l.longitude
+       from observation o
+       join bird_info b on b.id = o.bird_id
+       join location l on l.id = o.location_id
+       where o.id = $1`,
+      [result.rows[0].id]
+    );
+
+    res.status(201).json(fullObs.rows[0]);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/me/observations/:id", requireAuth, async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+    const observationId = Number(firstParam(req.params.id));
+    if (!userId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
+    const result = await query(
+      "delete from observation where id = $1 and user_id = $2 returning id",
+      [observationId, userId]
+    );
+
+    if (result.rowCount === 0) {
+      res.status(404).json({ error: "Observation not found or not owned by you." });
+      return;
+    }
+
+    res.status(204).send();
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get("/api/visualization/observations", requireAuth, async (req, res, next) => {
   try {
     const filters = buildVisualizationFilters(req.query);
@@ -171,15 +542,17 @@ app.get("/api/visualization/observations", requireAuth, async (req, res, next) =
          l.id as "locationId",
          l.name as "locationName",
          l.latitude,
-         l.longitude
+         l.longitude,
+         (fb.bird_id is not null) as "isFavorite"
        from observation o
        join bird_info b on b.id = o.bird_id
        left join bird_family f on f.id = b.family_id
        join location l on l.id = o.location_id
+       left join favorite_bird fb on fb.bird_id = b.id and fb.user_id = $${filters.params.length + 2}
        ${filters.whereClause}
        order by o.event_date desc, o.id desc
        limit $${filters.params.length + 1}`,
-      [...filters.params, limit]
+      [...filters.params, limit, req.user?.id]
     );
 
     res.json({ observations: result.rows });
@@ -789,6 +1162,19 @@ type VisualizationObservationRow = {
   locationName: string;
   latitude: number;
   longitude: number;
+  isFavorite: boolean;
+};
+
+type FavoriteBirdRow = {
+  birdId: number;
+  birdName: string;
+  birdLatinName: string;
+  birdDescription: string;
+  birdImageUrl: string;
+  source: string;
+  familyName: string | null;
+  familyLatinName: string | null;
+  createdAt: string;
 };
 
 type ChartCountRow = {
