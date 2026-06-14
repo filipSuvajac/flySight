@@ -30,7 +30,6 @@ export function MySightingsPage({ token }: MySightingsPageProps) {
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
 
-  // Form states
   const [birdId, setBirdId] = useState("");
   const [customBirdName, setCustomBirdName] = useState("");
   const [locationName, setLocationName] = useState("");
@@ -39,11 +38,9 @@ export function MySightingsPage({ token }: MySightingsPageProps) {
   const [observedCount, setObservedCount] = useState(1);
   const [eventDate, setEventDate] = useState(new Date().toISOString().slice(0, 10));
 
-  // Search states
   const [searchTerm, setSearchTerm] = useState("");
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
-  // Map Picker
   const [showMapPicker, setShowMapPicker] = useState(false);
 
   useEffect(() => {
@@ -63,7 +60,6 @@ export function MySightingsPage({ token }: MySightingsPageProps) {
       });
   }, [token]);
 
-  // Click outside to close dropdown
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       const target = event.target as HTMLElement;
@@ -218,7 +214,6 @@ export function MySightingsPage({ token }: MySightingsPageProps) {
       </div>
 
       <div className="route-grid">
-        {/* Sighting Logging Form */}
         <div className="route-panel">
           <h2>Log new sighting</h2>
           <p style={{ color: "#52606d", fontSize: "14px", marginBottom: "20px" }}>
@@ -238,7 +233,6 @@ export function MySightingsPage({ token }: MySightingsPageProps) {
           )}
 
           <form onSubmit={handleSave} style={{ display: "grid", gap: "16px" }}>
-            {/* Searchable Species dropdown */}
             <div className="field" id="bird-search-container" style={{ position: "relative" }}>
               <label htmlFor="bird-search">Species</label>
               <div style={{ display: "flex", gap: "8px", position: "relative" }}>
@@ -445,7 +439,6 @@ export function MySightingsPage({ token }: MySightingsPageProps) {
           </form>
         </div>
 
-        {/* Observations List */}
         <div className="route-panel wide">
           <h2>Sightings log</h2>
           <p style={{ color: "#52606d", fontSize: "14px", marginBottom: "20px" }}>

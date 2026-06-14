@@ -64,6 +64,48 @@ data class EbirdObservation(
     val reviewed: Boolean = false
 )
 
+@Serializable
+data class AnalyticsResponse(
+    val generatedAt: String = "",
+    val database: DatabaseAnalytics = DatabaseAnalytics(),
+    val activity: ActivityAnalytics = ActivityAnalytics()
+)
+
+@Serializable
+data class DatabaseAnalytics(
+    val tableCounts: List<AnalyticsCount> = emptyList(),
+    val observationsBySource: List<AnalyticsCount> = emptyList(),
+    val topSpecies: List<AnalyticsCount> = emptyList(),
+    val topLocations: List<AnalyticsCount> = emptyList(),
+    val monthlyTrend: List<AnalyticsCount> = emptyList()
+)
+
+@Serializable
+data class ActivityAnalytics(
+    val total: Int = 0,
+    val today: Int = 0,
+    val week: Int = 0,
+    val eventsByDay: List<AnalyticsCount> = emptyList(),
+    val eventsByType: List<AnalyticsCount> = emptyList(),
+    val recentEvents: List<ActivityEvent> = emptyList()
+)
+
+@Serializable
+data class AnalyticsCount(
+    val label: String = "",
+    val total: Int = 0
+)
+
+@Serializable
+data class ActivityEvent(
+    val id: Int = 0,
+    val eventType: String = "",
+    val source: String = "",
+    val actor: String = "",
+    val createdAt: String = "",
+    val metadataText: String = ""
+)
+
 val flySightSchemas = listOf(
     TableSchema(
         name = "bird_family",
@@ -84,5 +126,11 @@ val flySightSchemas = listOf(
         name = "observation",
         label = "Observations",
         columns = listOf("id", "bird_id", "location_id", "observed_count", "event_date", "source")
+    ),
+    TableSchema(
+        name = "app_event",
+        label = "Activity events",
+        columns = listOf("id", "event_type", "source", "user_id", "metadata", "created_at"),
+        editableColumns = listOf("event_type", "source", "user_id")
     )
 )

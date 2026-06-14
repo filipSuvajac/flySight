@@ -56,6 +56,7 @@ app.get("/", (_req, res) => {
       "/api/tables",
       "/api/visualization/observations",
       "/api/visualization/summary",
+      "/api/analytics/desktop",
       "/api/me/favorites",
       "/api/data-sources",
       "/api/:table",
@@ -282,6 +283,8 @@ app.put("/api/me/profile", requireAuth, async (req, res, next) => {
       role: req.user?.role === "admin" ? "admin" : "user"
     };
 
+    await logAppEvent("profile_updated", "web", userId, { location: updatedProfile.location });
+
     res.json({
       ...updatedProfile,
       user: updatedUser,
@@ -360,6 +363,8 @@ app.post("/api/me/favorites", requireAuth, async (req, res, next) => {
       [userId, birdId]
     );
 
+    await logAppEvent("favorite_added", "web", userId, { birdId });
+
     res.status(201).json({ birdId, isFavorite: true });
   } catch (error) {
     next(error);
@@ -435,7 +440,6 @@ app.post("/api/me/observations", requireAuth, async (req, res, next) => {
       return;
     }
 
-    // 1. Resolve or create bird
     if (!birdId && customBirdName) {
       const existingBird = await query<{ id: number }>(
         "select id from bird_info where lower(name) = lower($1) limit 1",
@@ -458,7 +462,6 @@ app.post("/api/me/observations", requireAuth, async (req, res, next) => {
       }
     }
 
-    // 2. Find or create location
     let locationResult = await query<{ id: number }>(
       "select id from location where name = $1 and latitude = $2 and longitude = $3 limit 1",
       [locationName, latitude, longitude]
@@ -471,15 +474,20 @@ app.post("/api/me/observations", requireAuth, async (req, res, next) => {
     }
     const locationId = locationResult.rows[0].id;
 
-    // 3. Create observation
     const result = await query<{ id: number }>(
       `insert into observation (bird_id, location_id, user_id, observed_count, event_date, source, metadata)
        values ($1, $2, $3, $4, $5::date, 'user', '{}'::jsonb)
        returning id`,
       [birdId, locationId, userId, observedCount, eventDate]
     );
+    await logAppEvent("user_observation_created", "web", userId, {
+      observationId: result.rows[0].id,
+      birdId,
+      locationId,
+      observedCount,
+      eventDate
+    });
 
-    // 4. Fetch the full observation to return
     const fullObs = await query(
       `select o.id, o.observed_count as "observedCount", o.event_date::text as "eventDate", o.source, o.metadata,
               b.id as "birdId", b.name as "birdName", b.latin_name as "birdLatinName", b.image_url as "birdImageUrl",
@@ -638,6 +646,120 @@ app.get("/api/visualization/summary", requireAuth, async (req, res, next) => {
   }
 });
 
+app.get("/api/analytics/desktop", requireAuth, requireAdmin, async (_req, res, next) => {
+  try {
+    const totals = await query<DesktopTotalsRow>(
+      `select
+         (select count(*)::int from users) as users,
+         (select count(*)::int from bird_family) as families,
+         (select count(*)::int from bird_info) as birds,
+         (select count(*)::int from location) as locations,
+         (select count(*)::int from observation) as observations,
+         (select count(*)::int from app_event) as events`
+    );
+    const observationsBySource = await query<AnalyticsCountRow>(
+      `select source as label, count(*)::int as total
+       from observation
+       group by source
+       order by total desc, source asc`
+    );
+    const topSpecies = await query<AnalyticsCountRow>(
+      `select b.name as label, count(*)::int as total
+       from observation o
+       join bird_info b on b.id = o.bird_id
+       group by b.name
+       order by total desc, b.name asc
+       limit 8`
+    );
+    const topLocations = await query<AnalyticsCountRow>(
+      `select l.name as label, count(*)::int as total
+       from observation o
+       join location l on l.id = o.location_id
+       group by l.name
+       order by total desc, l.name asc
+       limit 8`
+    );
+    const monthlyTrend = await query<AnalyticsCountRow>(
+      `select to_char(date_trunc('month', event_date), 'YYYY-MM') as label, count(*)::int as total
+       from observation
+       group by date_trunc('month', event_date)
+       order by date_trunc('month', event_date) asc`
+    );
+    const eventTotals = await query<ActivityTotalsRow>(
+      `select
+         count(*)::int as total,
+         count(*) filter (where created_at >= current_date)::int as today,
+         count(*) filter (where created_at >= current_date - interval '7 days')::int as week
+       from app_event`
+    );
+    const eventsByDay = await query<AnalyticsCountRow>(
+      `select created_at::date::text as label, count(*)::int as total
+       from app_event
+       where created_at >= current_date - interval '14 days'
+       group by created_at::date
+       order by created_at::date asc`
+    );
+    const eventsByType = await query<AnalyticsCountRow>(
+      `select event_type as label, count(*)::int as total
+       from app_event
+       group by event_type
+       order by total desc, event_type asc
+       limit 8`
+    );
+    const recentEvents = await query<RecentEventRow>(
+      `select
+         e.id,
+         e.event_type as "eventType",
+         e.source,
+         coalesce(u.email, 'system') as actor,
+         e.created_at::text as "createdAt",
+         e.metadata::text as "metadataText"
+       from app_event e
+       left join users u on u.id = e.user_id
+       order by e.created_at desc
+       limit 10`
+    );
+
+    const totalRow = totals.rows[0] ?? {
+      users: 0,
+      families: 0,
+      birds: 0,
+      locations: 0,
+      observations: 0,
+      events: 0
+    };
+    const activityRow = eventTotals.rows[0] ?? { total: 0, today: 0, week: 0 };
+
+    res.json({
+      generatedAt: new Date().toISOString(),
+      database: {
+        tableCounts: [
+          { label: "Users", total: totalRow.users },
+          { label: "Bird families", total: totalRow.families },
+          { label: "Birds", total: totalRow.birds },
+          { label: "Locations", total: totalRow.locations },
+          { label: "Observations", total: totalRow.observations },
+          { label: "Activity events", total: totalRow.events }
+        ],
+        observationsBySource: observationsBySource.rows,
+        topSpecies: topSpecies.rows,
+        topLocations: topLocations.rows,
+        monthlyTrend: monthlyTrend.rows
+      },
+      activity: {
+        total: activityRow.total,
+        today: activityRow.today,
+        week: activityRow.week,
+        eventsByDay: eventsByDay.rows,
+        eventsByType: eventsByType.rows,
+        recentEvents: recentEvents.rows
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get("/api/data-sources", requireAuth, requireAdmin, async (_req, res, next) => {
   try {
     const result = await query<DataSourceSettingsRow>(
@@ -740,6 +862,10 @@ app.post("/api/:table", requireAuth, requireAdmin, async (req, res, next) => {
       `insert into ${table.table} (${columns}) values (${placeholders}) returning *`,
       keys.map((key) => body[key])
     );
+    await logAppEvent("table_row_created", "desktop", req.user?.id, {
+      table: table.table,
+      rowId: result.rows[0]?.id ?? null
+    });
     res.status(201).json(result.rows[0]);
   } catch (error) {
     next(error);
@@ -765,6 +891,10 @@ app.put("/api/:table/:id", requireAuth, requireAdmin, async (req, res, next) => 
       res.status(404).json({ error: "Row not found." });
       return;
     }
+    await logAppEvent("table_row_updated", "desktop", req.user?.id, {
+      table: table.table,
+      rowId: result.rows[0]?.id ?? firstParam(req.params.id)
+    });
     res.json(result.rows[0]);
   } catch (error) {
     next(error);
@@ -779,6 +909,10 @@ app.delete("/api/:table/:id", requireAuth, requireAdmin, async (req, res, next) 
       res.status(404).json({ error: "Row not found." });
       return;
     }
+    await logAppEvent("table_row_deleted", "desktop", req.user?.id, {
+      table: table.table,
+      rowId: result.rows[0]?.id ?? firstParam(req.params.id)
+    });
     res.status(204).send();
   } catch (error) {
     next(error);
@@ -840,6 +974,10 @@ app.post("/api/import/dopps", requireAuth, requireAdmin, async (req, res, next) 
       "insert into import_batch (source, imported_count, metadata) values ($1, $2, $3)",
       ["DOPPS", importedBirds, { families: importedFamilies }]
     );
+    await logAppEvent("dopps_imported", "desktop", req.user?.id, {
+      families: importedFamilies,
+      birds: importedBirds
+    });
 
     res.json({ status: "ok", families: importedFamilies, birds: importedBirds });
   } catch (error) {
@@ -995,6 +1133,7 @@ app.post("/api/import/ebird", requireAuth, requireAdmin, async (req, res, next) 
       "insert into import_batch (source, imported_count, metadata) values ($1, $2, $3)",
       ["eBird", result.importedObservations, { importedBirds: result.importedBirds, importedLocations: result.importedLocations, skipped: result.skipped }]
     );
+    await logAppEvent("ebird_imported", "desktop", req.user?.id, result);
 
     res.json({
       status: "ok",
@@ -1039,6 +1178,7 @@ app.post("/api/generate/observations", requireAuth, requireAdmin, async (req, re
       );
     }
 
+    await logAppEvent("generated_observations", "desktop", req.user?.id, { count });
     res.json({ status: "ok", generated: count });
   } catch (error) {
     next(error);
@@ -1244,6 +1384,35 @@ type DataSourceSettingsRow = {
   settings: Record<string, unknown>;
   lastSync: string | null;
   updatedAt: string;
+};
+
+type AnalyticsCountRow = {
+  label: string;
+  total: number;
+};
+
+type DesktopTotalsRow = {
+  users: number;
+  families: number;
+  birds: number;
+  locations: number;
+  observations: number;
+  events: number;
+};
+
+type ActivityTotalsRow = {
+  total: number;
+  today: number;
+  week: number;
+};
+
+type RecentEventRow = {
+  id: number;
+  eventType: string;
+  source: string;
+  actor: string;
+  createdAt: string;
+  metadataText: string;
 };
 
 type SlovenianBirdFamily = {
@@ -1664,6 +1833,22 @@ function isHardcodedAdmin(email: string, password: string) {
 
 function normalizeText(value: unknown) {
   return String(value ?? "").trim();
+}
+
+async function logAppEvent(
+  eventType: string,
+  source: string,
+  userId: number | undefined,
+  metadata: Record<string, unknown> = {}
+) {
+  try {
+    await query(
+      "insert into app_event (event_type, source, user_id, metadata) values ($1, $2, $3, $4)",
+      [eventType, source, userId ?? null, metadata]
+    );
+  } catch (error) {
+    console.warn("Could not log app event:", error);
+  }
 }
 
 function firstParam(value: string | string[]) {

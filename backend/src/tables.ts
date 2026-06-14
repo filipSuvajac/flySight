@@ -1,4 +1,4 @@
-export type TableName = "bird_family" | "bird_info" | "location" | "observation";
+export type TableName = "bird_family" | "bird_info" | "location" | "observation" | "app_event";
 
 type TableConfig = {
   table: TableName;
@@ -26,6 +26,11 @@ export const tables: Record<TableName, TableConfig> = {
     table: "observation",
     writable: ["bird_id", "location_id", "observed_count", "event_date", "source", "metadata"],
     orderBy: "id"
+  },
+  app_event: {
+    table: "app_event",
+    writable: ["event_type", "source", "user_id", "metadata"],
+    orderBy: "id desc"
   }
 };
 
