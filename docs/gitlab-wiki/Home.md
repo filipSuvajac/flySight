@@ -1,4 +1,4 @@
-# FlySight - GitLab Wiki
+# FlySight - Project Wiki
 
 Ta Wiki predstavlja zaključno dokumentacijo projekta FlySight. Dokumentacijo smo razdelili po sklopih, ki jih zahteva naloga: najprej so opisane specifikacije projekta, nato namestitev in prijava, za tem pet glavnih primerov uporabe, na koncu pa še izvedene funkcionalnosti.
 
