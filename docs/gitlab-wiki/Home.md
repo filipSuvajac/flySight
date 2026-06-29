@@ -6,10 +6,10 @@ FlySight smo razvijali kot študentski prototip digitalnega dvojčka za podatke 
 
 ## Struktura Wiki dokumentacije
 
-1. [Projektne specifikacije](01-projektne-specifikacije)
-2. [Navodila za namestitev in prijavo v sistem](02-namestitev-in-prijava)
-3. [Ključni primeri uporabe](03-kljucni-primeri-uporabe)
-4. [Dokumentacija izvedenih lastnosti](04-dokumentacija-izvedenih-lastnosti)
+1. [Projektne specifikacije](01-projektne-specifikacije.md)
+2. [Navodila za namestitev in prijavo v sistem](02-namestitev-in-prijava.md)
+3. [Ključni primeri uporabe](03-kljucni-primeri-uporabe.md)
+4. [Dokumentacija izvedenih lastnosti](04-dokumentacija-izvedenih-lastnosti.md)
 
 ## Osnovni podatki projekta
 
