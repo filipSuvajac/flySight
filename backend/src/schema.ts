@@ -85,6 +85,15 @@ export async function ensureSchema() {
       created_at timestamptz not null default now()
     );
 
+    create table if not exists app_event (
+      id serial primary key,
+      event_type text not null,
+      source text not null default 'api',
+      user_id integer references users(id) on delete set null,
+      metadata jsonb not null default '{}'::jsonb,
+      created_at timestamptz not null default now()
+    );
+
     create table if not exists data_source_settings (
       key text primary key,
       name text not null,

@@ -59,6 +59,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.jetbrains.compose.resources.painterResource
+import projektni.praktikum.flysight.databaseGUI.data.ActivityEvent
+import projektni.praktikum.flysight.databaseGUI.data.AnalyticsCount
+import projektni.praktikum.flysight.databaseGUI.data.AnalyticsResponse
 import projektni.praktikum.flysight.databaseGUI.data.Bird
 import projektni.praktikum.flysight.databaseGUI.data.BirdFamily
 import projektni.praktikum.flysight.databaseGUI.data.EbirdObservation
@@ -69,6 +72,7 @@ import projektni.praktikum.flysight.databaseGUI.data.TableData
 
 private enum class Screen(val title: String) {
     Database("Database"),
+    Analytics("Analytics"),
     Scraper("Scraper"),
     Ebird("eBird"),
     Generator("Generator"),
@@ -103,6 +107,7 @@ fun App() {
                 Box(Modifier.fillMaxSize().padding(16.dp)) {
                     when (screen) {
                         Screen.Database -> DatabaseScreen(repository, apiBaseUrl, authToken, onStatus = { status = it })
+                        Screen.Analytics -> AnalyticsScreen(apiBaseUrl, authToken, onStatus = { status = it })
                         Screen.Scraper -> ScraperScreen(repository, apiBaseUrl, authToken, onStatus = { status = it })
                         Screen.Ebird -> EbirdScreen(repository, apiBaseUrl, authToken, onStatus = { status = it })
                         Screen.Generator -> GeneratorScreen(repository, apiBaseUrl, authToken, onStatus = { status = it })
@@ -115,6 +120,11 @@ fun App() {
                             onAuthChange = { email, token ->
                                 authEmail = email
                                 authToken = token
+                            },
+                            onLogout = {
+                                authEmail = ""
+                                authToken = ""
+                                status = "Logged out"
                             },
                             onStatus = { status = it }
                         )
@@ -139,6 +149,209 @@ private fun Header(status: String) {
         Text(status, color = Color(0xFFFFF59D))
     }
 }
+
+@Composable
+private fun AnalyticsScreen(
+    apiBaseUrl: String,
+    authToken: String,
+    onStatus: (String) -> Unit
+) {
+    var analytics by remember { mutableStateOf<AnalyticsResponse?>(null) }
+    var response by remember { mutableStateOf("Analytics not loaded yet.") }
+    val scope = rememberCoroutineScope()
+
+    fun refreshAnalytics() {
+        scope.launch {
+            if (authToken.isBlank()) {
+                response = "Login as an admin user before loading analytics."
+                onStatus(response)
+                return@launch
+            }
+
+            onStatus("Loading analytics...")
+            val result = withContext(Dispatchers.IO) {
+                FlySightApiClient(apiBaseUrl, authToken).fetchDesktopAnalytics()
+            }
+            result.fold(
+                onSuccess = {
+                    analytics = it
+                    response = "Analytics loaded at ${it.generatedAt.take(19).replace("T", " ")}"
+                    onStatus("Analytics loaded")
+                },
+                onFailure = {
+                    response = "Analytics failed: ${it.message}"
+                    onStatus(response)
+                }
+            )
+        }
+    }
+
+    LaunchedEffect(apiBaseUrl, authToken) {
+        if (authToken.isNotBlank()) {
+            refreshAnalytics()
+        }
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text("Analytics board", fontWeight = FontWeight.Bold)
+                Text("Database overview and stored activity events from the web service.", color = Color(0xFF607D8B))
+            }
+            Button(onClick = { refreshAnalytics() }) {
+                Text("Refresh analytics")
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+        Text(response, color = Color(0xFF455A64))
+        Spacer(Modifier.height(12.dp))
+
+        val data = analytics
+        if (data == null) {
+            Box(Modifier.fillMaxSize().background(Color.White).border(1.dp, Color(0xFFE0E0E0))) {
+                Text(
+                    "Open the Web service tab, login with an admin account, then load analytics.",
+                    modifier = Modifier.align(Alignment.Center),
+                    color = Color(0xFF607D8B)
+                )
+            }
+            return
+        }
+
+        LazyColumn(Modifier.fillMaxSize()) {
+            item {
+                Text("Database analytics", fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                    data.database.tableCounts.forEach { stat ->
+                        AnalyticsStatCard(stat.label, stat.total.toString())
+                        Spacer(Modifier.width(10.dp))
+                    }
+                }
+                Spacer(Modifier.height(14.dp))
+            }
+
+            item {
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                    AnalyticsBarList("Observations by source", data.database.observationsBySource, Modifier.width(420.dp))
+                    Spacer(Modifier.width(12.dp))
+                    AnalyticsBarList("Top species", data.database.topSpecies, Modifier.width(420.dp))
+                    Spacer(Modifier.width(12.dp))
+                    AnalyticsBarList("Top locations", data.database.topLocations, Modifier.width(420.dp))
+                }
+                Spacer(Modifier.height(12.dp))
+                AnalyticsBarList("Monthly observation trend", data.database.monthlyTrend, Modifier.fillMaxWidth())
+                Spacer(Modifier.height(20.dp))
+            }
+
+            item {
+                Text("Application usage", fontWeight = FontWeight.Bold)
+                Text("Recent events show who created each stored activity, not the user currently open in the browser.", color = Color(0xFF607D8B))
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                    AnalyticsStatCard("Events today", data.activity.today.toString())
+                    Spacer(Modifier.width(10.dp))
+                    AnalyticsStatCard("Events this week", data.activity.week.toString())
+                    Spacer(Modifier.width(10.dp))
+                    AnalyticsStatCard("Events total", data.activity.total.toString())
+                }
+                Spacer(Modifier.height(14.dp))
+            }
+
+            item {
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                    AnalyticsBarList("Activity by day", data.activity.eventsByDay, Modifier.width(520.dp))
+                    Spacer(Modifier.width(12.dp))
+                    AnalyticsBarList("Activity by type", data.activity.eventsByType, Modifier.width(520.dp))
+                }
+                Spacer(Modifier.height(12.dp))
+                RecentEvents(data.activity.recentEvents)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AnalyticsStatCard(label: String, value: String) {
+    Surface(
+        modifier = Modifier.width(185.dp).height(88.dp),
+        color = Color.White,
+        elevation = 2.dp
+    ) {
+        Column(Modifier.fillMaxSize().padding(14.dp), verticalArrangement = Arrangement.SpaceBetween) {
+            Text(label, color = Color(0xFF607D8B), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(value, fontWeight = FontWeight.Bold, color = Color(0xFF0F766E))
+        }
+    }
+}
+
+@Composable
+private fun AnalyticsBarList(
+    title: String,
+    entries: List<AnalyticsCount>,
+    modifier: Modifier = Modifier
+) {
+    val max = entries.maxOfOrNull { it.total } ?: 0
+    Column(modifier.background(Color.White).border(1.dp, Color(0xFFE0E0E0)).padding(12.dp)) {
+        Text(title, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(8.dp))
+        if (entries.isEmpty()) {
+            Text("No data yet.", color = Color(0xFF607D8B))
+        } else {
+            entries.take(8).forEach { entry ->
+                val fraction = if (max <= 0) 0f else (entry.total.toFloat() / max.toFloat()).coerceIn(0.05f, 1f)
+                Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(entry.label.ifBlank { "unknown" }.limitForCell(28), modifier = Modifier.width(150.dp))
+                    Box(Modifier.width(170.dp).height(12.dp).background(Color(0xFFE0ECE9))) {
+                        Box(Modifier.fillMaxWidth(fraction).fillMaxHeight().background(Color(0xFF0F766E)))
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Text(entry.total.toString(), fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecentEvents(events: List<ActivityEvent>) {
+    Column(Modifier.fillMaxWidth().background(Color.White).border(1.dp, Color(0xFFE0E0E0)).padding(12.dp)) {
+        Text("Recent stored events", fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(8.dp))
+        if (events.isEmpty()) {
+            Text("No events have been tracked yet.", color = Color(0xFF607D8B))
+        } else {
+            Row(Modifier.fillMaxWidth().background(Color(0xFFEEF2F4)).padding(8.dp)) {
+                Text("Event", modifier = Modifier.width(220.dp), fontWeight = FontWeight.Bold)
+                Text("Source", modifier = Modifier.width(120.dp), fontWeight = FontWeight.Bold)
+                Text("Event user", modifier = Modifier.width(230.dp), fontWeight = FontWeight.Bold)
+                Text("Time", modifier = Modifier.width(180.dp), fontWeight = FontWeight.Bold)
+                Text("Metadata", modifier = Modifier.width(360.dp), fontWeight = FontWeight.Bold)
+            }
+
+            events.forEach { event ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(event.eventType.humanEventName(), modifier = Modifier.width(220.dp))
+                    Text(event.source, modifier = Modifier.width(120.dp))
+                    Text(event.actor, modifier = Modifier.width(230.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(event.createdAt.take(19).replace("T", " "), modifier = Modifier.width(180.dp))
+                    Text(event.metadataText.limitForCell(80), modifier = Modifier.width(360.dp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+                Divider(color = Color(0xFFF1F1F1))
+            }
+        }
+    }
+}
+
+private fun String.humanEventName(): String =
+    split("_").joinToString(" ") { part ->
+        part.replaceFirstChar { char -> char.uppercase() }
+    }
 
 @Composable
 private fun DatabaseScreen(
@@ -888,6 +1101,7 @@ private fun ServiceScreen(
     authEmail: String,
     onApiBaseUrlChange: (String) -> Unit,
     onAuthChange: (String, String) -> Unit,
+    onLogout: () -> Unit,
     onStatus: (String) -> Unit
 ) {
     var response by remember { mutableStateOf("No request sent yet.") }
@@ -962,7 +1176,18 @@ private fun ServiceScreen(
             }
 
             Spacer(Modifier.width(12.dp))
-            Text(if (authToken.isBlank()) "Not authenticated" else "Authenticated: $authEmail")
+            Text(if (authToken.isBlank()) "Not authenticated" else "Authenticated in desktop app: $authEmail")
+            if (authToken.isNotBlank()) {
+                Spacer(Modifier.width(8.dp))
+                Button(
+                    onClick = {
+                        onLogout()
+                        response = "Logged out from desktop app."
+                    }
+                ) {
+                    Text("Logout")
+                }
+            }
         }
 
         Spacer(Modifier.height(12.dp))

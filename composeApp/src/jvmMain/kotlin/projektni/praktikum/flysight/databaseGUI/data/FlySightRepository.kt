@@ -266,6 +266,29 @@ class FlySightApiClient(
         postJson("/api/generate/observations", json.encodeToString(settings))
     }
 
+    fun fetchDesktopAnalytics(): Result<AnalyticsResponse> = runCatching {
+        val request = requestBuilder("/api/analytics/desktop")
+            .url("${baseUrl.trimEnd()}/api/analytics/desktop")
+            .get()
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                val errorBody = response.body?.string().orEmpty()
+                val cleanMessage = when {
+                    response.code == 404 && errorBody.contains("Cannot GET /api/analytics/desktop") ->
+                        "HTTP 404: analytics endpoint is missing on the running backend. Rebuild and restart the backend."
+                    errorBody.trimStart().startsWith("<!DOCTYPE") || errorBody.trimStart().startsWith("<html") ->
+                        "HTTP ${response.code}: ${response.message}"
+                    else -> "HTTP ${response.code}: $errorBody"
+                }
+                error(cleanMessage)
+            }
+            val payload = response.body?.string().orEmpty()
+            json.decodeFromString<AnalyticsResponse>(payload)
+        }
+    }
+
     private fun requestRow(method: String, path: String, values: Map<String, String>): Map<String, String> {
         val body = json.encodeToString(values)
         val request = requestBuilder(path)
