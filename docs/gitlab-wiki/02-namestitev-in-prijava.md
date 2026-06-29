@@ -34,25 +34,7 @@ Linux/macOS:
 cp .env.example .env
 ```
 
-Primer konfiguracije:
-
-```env
-POSTGRES_DB=flysight
-POSTGRES_USER=flysight
-POSTGRES_PASSWORD=flysight
-
-DATABASE_URL=postgres://flysight:flysight@postgres:5432/flysight
-
-JWT_SECRET=change-this-secret
-JWT_EXPIRES_IN=2h
-CORS_ORIGIN=http://localhost
-RATE_LIMIT_MAX=300
-
-EBIRD_API_KEY=your-ebird-api-key
-EBIRD_MAX_RESULTS=500
-```
-
-Za realno uporabo je treba nastaviti lastne vrednosti za `POSTGRES_PASSWORD`, `JWT_SECRET` in `EBIRD_API_KEY`. Datoteka `.env` ne sme biti objavljena v repozitoriju.
+Za realno uporabo je treba nastaviti lastne vrednosti za `POSTGRES_PASSWORD`, `JWT_SECRET` in `EBIRD_API_KEY`. 
 
 ## 2.3 Lokalni zagon z Docker Compose
 
@@ -91,13 +73,7 @@ Po odprtju `http://localhost` se prikaže prijavni oziroma registracijski zaslon
 
 ### Prijava kot administrator
 
-Za razvoj so v backendu pripravljeni administratorski računi:
-
-| Email | Geslo |
-| --- | --- |
-| `filip@flysight.test` | `FlySightAdmin123!` |
-| `niko@flysight.test` | `FlySightAdmin123!` |
-| `enej@flysight.test` | `FlySightAdmin123!` |
+Za razvoj so v backendu pripravljeni administratorski računi. Administratorski dostopi so pripravljeni za predstavitev in se posredujejo ocenjevalcu ob demonstraciji.
 
 Administrator ima dostop do dodatnih strani:
 
