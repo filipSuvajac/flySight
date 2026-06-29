@@ -1,84 +1,215 @@
-﻿# FlySight
+# FlySight
 
-FlySight je prototip digitalnega dvojčka za podatke o pticah v Sloveniji. Projekt združuje podatke iz virov, kot sta DOPPS oziroma ptice.si in eBird, jih pretvori v enoten podatkovni model ter omogoča pregled, filtriranje, administracijo in vizualizacijo opažanj na zemljevidu.
+FlySight je prototip digitalnega dvojčka za podatke o pticah v Sloveniji. Aplikacija združuje podatke iz različnih virov, jih pretvori v enoten podatkovni model ter omogoča pregled, filtriranje in vizualizacijo opažanj ptic na zemljevidu.
 
-Sistem je sestavljen iz spletnega vmesnika, backend REST API-ja, PostgreSQL podatkovne baze, namizne administratorske aplikacije in dodatnega CityInfra DSL modula za opis prostorske infrastrukture ter izvoz v GeoJSON.
+Projekt vključuje spletni vmesnik, backend REST API, PostgreSQL podatkovno bazo, namizno administratorsko aplikacijo in dodaten CityInfra DSL modul za opis prostorske infrastrukture ter izvoz v GeoJSON.
+
+---
+
+## Vsebina
+
+* [Opis projekta](#opis-projekta)
+* [Ključne funkcionalnosti](#ključne-funkcionalnosti)
+* [Arhitektura](#arhitektura)
+* [Tehnologije](#tehnologije)
+* [Struktura repozitorija](#struktura-repozitorija)
+* [Dostop do aplikacije](#dostop-do-aplikacije)
+* [Prijava in uporaba sistema](#prijava-in-uporaba-sistema)
+* [Lokalni zagon](#lokalni-zagon)
+* [Lokalni razvoj](#lokalni-razvoj)
+* [CityInfra DSL](#cityinfra-dsl)
+* [Ključni primeri uporabe](#ključni-primeri-uporabe)
+* [Varnost](#varnost)
+* [Projektno vodenje](#projektno-vodenje)
+* [Git workflow](#git-workflow)
+* [CI/CD](#cicd)
+* [Status projekta](#status-projekta)
+* [Ekipa](#ekipa)
+
+---
+
+## Opis projekta
+
+FlySight je namenjen pregledovanju in upravljanju podatkov o pticah, njihovih lokacijah in opažanjih. Podatki se pridobivajo iz zunanjih virov, ročnih vnosov uporabnikov ter testnih podatkov, pripravljenih za demonstracijo sistema.
+
+Glavni cilj projekta je prikazati, kako je mogoče podatke o opazovanju ptic povezati v enoten sistem, kjer jih uporabnik lahko pregleduje na interaktivnem zemljevidu, filtrira po različnih kriterijih in dopolnjuje z lastnimi opažanji.
+
+Sistem podpira tudi administratorski del, ki omogoča pregled podatkov, upravljanje virov in razvojna opravila prek namizne aplikacije.
+
+---
 
 ## Ključne funkcionalnosti
 
-- prijava in registracija uporabnikov z JWT avtentikacijo,
-- pregled ptic, lokacij in opažanj na interaktivnem zemljevidu,
-- filtriranje opažanj po vrsti, lokaciji, datumu in viru podatkov,
-- dodajanje lastnih opažanj in priljubljenih ptic,
-- administratorski pregled podatkovnih tabel,
-- uvoz podatkov iz DOPPS/ptice.si in eBird,
-- generator testnih opažanj,
-- eBird integracija prek REST API-ja in WebSocket povezave,
-- Docker okolje z Nginx reverse proxyjem,
-- CityInfra DSL: `.flyinfra` -> tokeni -> AST -> validacija -> GeoJSON.
+* registracija in prijava uporabnikov,
+* JWT avtentikacija,
+* ločitev navadnih uporabnikov in administratorjev,
+* pregled ptic, lokacij in opažanj,
+* prikaz opažanj na interaktivnem zemljevidu,
+* filtriranje opažanj po vrsti, lokaciji, datumu in viru,
+* dodajanje osebnih opažanj,
+* shranjevanje priljubljenih ptic,
+* administratorski pregled podatkovnih tabel,
+* uvoz in obdelava podatkov iz zunanjih virov,
+* eBird integracija prek REST API-ja,
+* WebSocket povezava za eBird podatke,
+* Docker okolje za lokalni zagon,
+* Nginx reverse proxy,
+* Kotlin Compose Desktop aplikacija,
+* CityInfra DSL z izvozom v GeoJSON.
+
+---
 
 ## Arhitektura
 
 ```text
 Uporabnik
+  |
   |-- React frontend + Leaflet zemljevid
-  |-- Kotlin Compose desktop aplikacija
-
-React / Desktop
-  |-- HTTP REST + JWT
-  |-- WebSocket /ws/ebird
-
-Nginx reverse proxy
-  |-- /auth, /api, /health, /ws -> Express backend
-  |-- / -> React frontend
-
-Express backend
-  |-- PostgreSQL podatkovna baza
-  |-- eBird API
-  |-- DOPPS/eBird import
+  |-- Kotlin Compose Desktop aplikacija
+            |
+            |-- HTTP REST + JWT
+            |-- WebSocket
+            |
+        Nginx reverse proxy
+            |
+            |-- Express backend API
+                    |
+                    |-- PostgreSQL podatkovna baza
+                    |-- eBird API
+                    |-- podatkovni uvoz
+                    |-- CityInfra DSL modul
 ```
 
-Glavni deli repozitorija:
+Frontend in desktop aplikacija komunicirata z backendom prek REST API-ja. Backend skrbi za avtentikacijo, dostop do podatkovne baze, obdelavo podatkovnih virov in izpostavljanje endpointov za spletni vmesnik.
 
-| Pot                  | Namen                                                         |
-| -------------------- | ------------------------------------------------------------- |
-| `frontend/`          | React + TypeScript spletni vmesnik                            |
-| `backend/`           | Node.js, Express in TypeScript REST API                       |
-| `composeApp/`        | Kotlin Compose Desktop aplikacija, scraperji in CityInfra DSL |
-| `docs/`              | dokumentacija in primeri za CityInfra DSL                     |
-| `docker-compose.yml` | lokalno Docker okolje za frontend, backend, bazo in Nginx     |
-| `nginx.conf`         | reverse proxy konfiguracija                                   |
+Nginx deluje kot reverse proxy in usmerja promet med frontend aplikacijo, backend API-jem in WebSocket povezavami.
+
+---
 
 ## Tehnologije
 
-- Frontend: React, TypeScript, Vite, Leaflet, React Leaflet
-- Backend: Node.js, Express, TypeScript, WebSocket, JWT, bcrypt
-- Baza: PostgreSQL
-- Desktop: Kotlin, Jetpack Compose Desktop
-- Podatki: DOPPS/ptice.si, eBird API, CSV/JSON uvoz
-- DevOps: Docker, Docker Compose, Nginx
-- DSL: Kotlin lexer, parser, AST, semantični validator in GeoJSON exporter
+### Frontend
 
-## Zahteve
+* React
+* TypeScript
+* Vite
+* Leaflet
+* React Leaflet
 
-Za Docker namestitev potrebujete:
+### Backend
 
-- Docker Desktop ali Docker Engine,
-- Docker Compose.
+* Node.js
+* Express
+* TypeScript
+* JWT
+* bcrypt
+* WebSocket
 
-Za lokalni razvoj brez Dockerja potrebujete:
+### Podatkovna baza
 
-- Node.js,
-- npm,
-- JDK,
-- Gradle wrapper je že vključen v repozitorij,
-- lokalno PostgreSQL bazo ali Docker PostgreSQL container.
+* PostgreSQL
 
-## Namestitev z Dockerjem
+### Desktop aplikacija
 
-Najpreprostejši zagon celotnega sistema je prek Docker Compose.
+* Kotlin
+* Jetpack Compose Desktop
+* Gradle
 
-1. Kopirajte primer konfiguracije:
+### DevOps
+
+* Docker
+* Docker Compose
+* Nginx
+* GitHub Actions
+
+### DSL modul
+
+* Kotlin lexer
+* parser
+* AST
+* semantična validacija
+* GeoJSON exporter
+
+---
+
+## Struktura repozitorija
+
+```text
+.
+├── frontend/              # React + TypeScript spletni vmesnik
+├── backend/               # Node.js + Express backend API
+├── composeApp/            # Kotlin Compose Desktop aplikacija in DSL modul
+├── docs/                  # Dokumentacija in primeri
+├── scripts/               # Pomožne skripte
+├── .github/workflows/     # GitHub Actions workflow datoteke
+├── docker-compose.yml     # Lokalno Docker okolje
+├── nginx.conf             # Nginx reverse proxy konfiguracija
+└── README.md
+```
+
+| Pot                  | Namen                                          |
+| -------------------- | ---------------------------------------------- |
+| `frontend/`          | spletni uporabniški vmesnik                    |
+| `backend/`           | REST API, avtentikacija in povezava z bazo     |
+| `composeApp/`        | namizna aplikacija, scraperji in CityInfra DSL |
+| `docs/`              | dodatna dokumentacija in primeri               |
+| `.github/workflows/` | CI/CD workflow datoteke                        |
+| `docker-compose.yml` | lokalni zagon sistema                          |
+| `nginx.conf`         | reverse proxy konfiguracija                    |
+
+---
+
+## Dostop do aplikacije
+
+Spletna aplikacija je namenjena uporabi prek brskalnika.
+
+```text
+URL aplikacije: http://68.210.204.107/
+```
+
+Če javni URL ni na voljo, se aplikacija zažene lokalno z Docker Compose okoljem.
+
+---
+
+## Prijava in uporaba sistema
+
+Uporabnik lahko v aplikaciji ustvari račun ali se prijavi z obstoječim računom.
+
+Po prijavi lahko navaden uporabnik:
+
+* pregleduje opažanja ptic,
+* uporablja zemljevid,
+* filtrira podatke,
+* dodaja lastna opažanja,
+* ureja profil,
+* shranjuje priljubljene ptice.
+
+Administrator ima dodatno dostop do:
+
+* pregleda podatkovnih tabel,
+* upravljanja podatkovnih virov,
+* generiranja testnih podatkov,
+* administratorskih funkcionalnosti v spletni ali namizni aplikaciji.
+
+Administratorski dostopi niso javno objavljeni v repozitoriju. Po potrebi se posredujejo ločeno ob demonstraciji projekta.
+
+---
+
+## Lokalni zagon
+
+Najbolj enostaven način za lokalni zagon celotnega sistema je Docker Compose.
+
+### Zahteve
+
+Za lokalni zagon potrebujete:
+
+* Docker,
+* Docker Compose,
+* `.env` datoteko, ustvarjeno iz `.env.example`.
+
+### Priprava konfiguracije
+
+V korenu projekta kopirajte primer konfiguracije:
 
 ```bash
 cp .env.example .env
@@ -90,55 +221,52 @@ Na Windows PowerShell:
 Copy-Item .env.example .env
 ```
 
-2. Po potrebi uredite `.env`:
+Datoteka `.env.example` vsebuje seznam potrebnih spremenljivk. Prava `.env` datoteka ni del repozitorija in ne sme biti objavljena.
 
-```env
-POSTGRES_DB=flysight
-POSTGRES_USER=flysight
-POSTGRES_PASSWORD=flysight
-DATABASE_URL=postgres://flysight:flysight@postgres:5432/flysight
-JWT_SECRET=change-this-secret
-JWT_EXPIRES_IN=2h
-CORS_ORIGIN=http://localhost
-RATE_LIMIT_MAX=300
-EBIRD_API_KEY=your-ebird-api-key
-EBIRD_MAX_RESULTS=500
-```
+Za lokalni zagon nastavite potrebne vrednosti za:
 
-3. Zaženite aplikacijo:
+* podatkovno bazo,
+* JWT skrivnost,
+* CORS origin,
+* eBird API ključ, če uporabljate eBird funkcionalnosti.
+
+### Zagon sistema
 
 ```bash
 docker compose up --build
 ```
 
-4. Odprite aplikacijo:
+Po zagonu je aplikacija dostopna na:
 
 ```text
 http://localhost
 ```
 
-Uporabni endpointi:
+Backend health endpoint:
 
 ```text
-GET http://localhost/health
-GET http://localhost/api/...
-POST http://localhost/auth/login
-WS  ws://localhost/ws/ebird
+http://localhost/health
 ```
 
-Za ustavitev okolja:
+### Ustavitev sistema
 
 ```bash
 docker compose down
 ```
 
-Za ustavitev in brisanje podatkovne baze:
+Za ustavitev in brisanje lokalnega podatkovnega volumna:
 
 ```bash
 docker compose down -v
 ```
 
+Ukaz `docker compose down -v` izbriše lokalne podatke baze, zato ga uporabite samo, ko želite začeti s prazno bazo.
+
+---
+
 ## Lokalni razvoj
+
+Lokalni razvoj je namenjen razvijalcem, ki želijo posamezne dele sistema poganjati brez Docker Compose okolja.
 
 ### Backend
 
@@ -148,7 +276,11 @@ npm install
 npm run dev
 ```
 
-Backend privzeto teče na portu `3000`. Pri lokalnem zagonu mora biti `DATABASE_URL` nastavljen na dostopno PostgreSQL bazo.
+Backend privzeto teče na portu:
+
+```text
+http://localhost:3000
+```
 
 Preverjanje tipov in build:
 
@@ -165,159 +297,397 @@ npm install
 npm run dev
 ```
 
-Vite običajno zažene aplikacijo na:
+Vite razvojni strežnik je običajno dostopen na:
 
 ```text
 http://localhost:5173
 ```
 
-Preverjanje tipov in produkcijski build:
+Preverjanje tipov in build:
 
 ```bash
 npm run typecheck
 npm run build
 ```
 
-### Namizna aplikacija
+### Desktop aplikacija
 
-Namizna aplikacija je v modulu `composeApp` in uporablja Kotlin Compose Desktop. Za zagon iz korena repozitorija uporabite:
+Namizna aplikacija se nahaja v modulu `composeApp`.
+
+Linux/macOS:
 
 ```bash
 ./gradlew :composeApp:run
 ```
 
-Na Windows:
+Windows:
 
 ```powershell
 .\gradlew.bat :composeApp:run
 ```
 
-Aplikacija se poveže na FlySight backend prek REST API-ja. Pred uporabo naj bo backend že zagnan, uporabnik pa se prijavi z veljavnim računom oziroma administratorskim dostopom.
+Namizna aplikacija uporablja backend API, zato mora biti backend pred uporabo zagnan.
 
-### CityInfra DSL demo
+---
 
-CityInfra demo prebere primer DSL zapisa in izpiše GeoJSON rezultat.
+## CityInfra DSL
+
+CityInfra DSL je dodatni modul za opis prostorske infrastrukture in izvoz v GeoJSON.
+
+Tok obdelave:
+
+```text
+DSL zapis -> lexer -> parser -> AST -> semantična validacija -> GeoJSON
+```
+
+Demo lahko zaženete z:
+
+Linux/macOS:
 
 ```bash
 ./gradlew :composeApp:cityInfraDemo
 ```
 
-Na Windows:
+Windows:
 
 ```powershell
 .\gradlew.bat :composeApp:cityInfraDemo
 ```
 
-Primer DSL datoteke je v:
+Primer vhodne datoteke je v dokumentacijskem delu projekta.
 
-```text
-docs/cityinfra-demo.ci
-```
+---
 
 ## Ključni primeri uporabe
 
-### 1. Prijava uporabnika
+### 1. Registracija in prijava
 
-Uporabnik odpre spletno ali namizno aplikacijo, vnese email in geslo, aplikacija pa pošlje zahtevek na backend.
+Uporabnik odpre aplikacijo, ustvari račun ali se prijavi z obstoječimi podatki. Backend preveri prijavne podatke in ob uspešni prijavi vrne JWT token, ki se uporablja pri zaščitenih zahtevkih.
 
 ```text
-Uporabnik -> Frontend/Desktop -> POST /auth/login -> Backend -> PostgreSQL
+Uporabnik -> Frontend -> Backend -> PostgreSQL
 ```
-
-Backend preveri uporabnika, primerja hash gesla in ob uspešni prijavi vrne JWT token. Token se nato uporablja pri zaščitenih API zahtevkih.
 
 ### 2. Pregled opažanj na zemljevidu
 
-Uporabnik odpre spletno aplikacijo, kjer frontend pridobi opažanja in jih prikaže na Leaflet zemljevidu.
+Uporabnik odpre zemljevid in pregleda opažanja ptic. Opažanja so prikazana kot markerji, uporabnik pa lahko klikne posamezen marker za dodatne informacije.
 
 ```text
-Frontend -> GET /api/visualization/observations -> Backend -> PostgreSQL -> Leaflet zemljevid
+Frontend -> Backend API -> PostgreSQL -> Leaflet zemljevid
 ```
 
-Uporabnik lahko opažanja filtrira po vrsti ptice, lokaciji, datumu in viru podatkov.
+### 3. Filtriranje podatkov
 
-### 3. Prikaz svežih eBird podatkov
-
-Frontend ali desktop aplikacija zahteva sveža eBird opažanja za Slovenijo.
+Uporabnik lahko opažanja filtrira po vrsti ptice, lokaciji, datumu ali viru podatkov. Frontend filtre pošlje backendu, backend pa vrne samo ustrezne rezultate.
 
 ```text
-Frontend/Desktop -> GET /api/ebird/recent -> Backend -> eBird API
+Frontend filtri -> Backend poizvedba -> Filtrirani rezultati
 ```
 
-Backend podatke normalizira in jih vrne aplikaciji, kjer se prikažejo v tabeli ali na zemljevidu. Spletni vmesnik uporablja tudi WebSocket pot `/ws/ebird` za eBird način delovanja.
+### 4. Dodajanje lastnega opažanja
 
-### 4. Uvoz DOPPS podatkov
-
-Namizna aplikacija prebere lokalno datoteko s podatki iz DOPPS/ptice.si, uporabnik podatke pregleda in sproži uvoz.
+Prijavljen uporabnik lahko doda svoje opažanje ptice z lokacijo, datumom in dodatnimi podatki. Opažanje se shrani v podatkovno bazo in je povezano z uporabnikom.
 
 ```text
-DOPPS scraper -> ptice_slovenije.json -> Desktop app -> POST /api/import/dopps -> Backend -> PostgreSQL
+Uporabnik -> POST zahtevek -> Backend -> PostgreSQL
 ```
 
-Backend shrani družine in vrste ptic v podatkovno bazo.
+### 5. Priljubljene ptice
 
-### 5. Administracija podatkov
-
-Administrator se prijavi v desktop ali spletni admin pogled in upravlja podatkovne tabele.
+Uporabnik lahko ptice doda med priljubljene in jih kasneje pregleda na ločeni strani.
 
 ```text
-Admin -> Desktop/Admin UI -> GET/POST/PUT/DELETE /api/:table -> Backend -> PostgreSQL
+Uporabnik -> Favorites -> Backend -> PostgreSQL
 ```
 
-Podprti so pregled, dodajanje, urejanje in brisanje zapisov, odvisno od tabele in uporabniške vloge.
+### 6. Pregled eBird podatkov
 
-### 6. Dodajanje lastnega opažanja
-
-Prijavljen uporabnik lahko doda svoje opažanje ptice z lokacijo, datumom in dodatnimi metapodatki.
+Aplikacija lahko pridobi aktualna eBird opažanja in jih prikaže v uporabniškem vmesniku.
 
 ```text
-Uporabnik -> POST /api/me/observations -> Backend -> PostgreSQL
+Frontend -> Backend -> eBird API -> Frontend
 ```
 
-Opažanje se lahko nato uporabi v osebnem pregledu in vizualizaciji podatkov.
+### 7. Administracija podatkov
 
-### 7. CityInfra DSL izvoz
-
-Razvijalec zapiše mestno infrastrukturo v `.flyinfra` oziroma `.ci` datoteki, CityInfra modul pa jo pretvori v GeoJSON.
+Administrator ima dostop do dodatnih pogledov za pregled in upravljanje podatkovnih tabel ter podatkovnih virov.
 
 ```text
-.flyinfra -> Lexer -> Parser -> AST -> SemanticValidator -> GeoJsonExporter -> GeoJSON
+Admin -> Admin UI -> Backend -> PostgreSQL
 ```
 
-Ta del prikazuje prevajalski tok: tokenizacijo, parsanje, semantično validacijo in generiranje izhodnega formata za zemljevid.
+---
 
 ## Varnost
 
-FlySight uporablja več osnovnih varnostnih mehanizmov:
+Projekt uporablja več osnovnih varnostnih mehanizmov:
 
-- JWT tokeni za avtentikacijo,
-- ločitev navadnih uporabnikov in administratorjev,
-- bcrypt hashiranje gesel,
-- zaščitene admin API poti,
-- CORS konfiguracija,
-- Helmet varnostni headerji,
-- rate limiting,
-- občutljive vrednosti v `.env` oziroma GitHub Secrets.
+* JWT avtentikacijo,
+* bcrypt hashiranje gesel,
+* ločitev uporabniških vlog,
+* zaščitene administratorske poti,
+* CORS konfiguracijo,
+* varnostne HTTP headerje,
+* rate limiting,
+* okoljske spremenljivke za občutljive nastavitve.
 
-Opomba: vrednosti iz `.env.example` so namenjene lokalnemu razvoju. Za produkcijo nastavite lastne skrivnosti, gesla in eBird API ključ.
+Občutljive vrednosti, kot so gesla, JWT skrivnosti, API ključi in produkcijski deployment podatki, niso vključene v README in ne smejo biti objavljene v repozitoriju.
+
+Za lokalni razvoj se uporablja `.env.example`, prava `.env` datoteka pa mora ostati lokalna.
+
+---
+
+## Projektno vodenje
+
+Za vodenje razvoja smo uporabljali Jira board. Delo je bilo razdeljeno na več večjih sklopov:
+
+* razvoj backend API-ja,
+* razvoj frontend vmesnika,
+* razvoj Kotlin Compose Desktop aplikacije,
+* priprava podatkovnega modela,
+* Dockerizacija aplikacije,
+* namestitev aplikacije na Azure VM,
+* CI/CD postopek z GitHub Actions, Docker Hub in webhookom,
+* priprava dokumentacije in predstavitev.
+
+Naloge so bile organizirane v statuse:
+
+```text
+To Do -> In Progress -> Review -> Done
+```
+
+Za večje tehnične sklope so bili uporabljeni epici, na primer:
+
+```text
+Docker and Azure deployment
+CI/CD deployment with Docker Hub and GitHub Actions
+CityInfra DSL
+```
+
+Podrobnejša dokumentacija projektnega vodenja in zaslonske slike Jira boarda so shranjene v mapi `docs/`.
+
+---
+
+## Git workflow
+
+Razvoj projekta je potekal prek GitHub repozitorija. Glavna veja projekta je:
+
+```text
+master
+```
+
+Za razvoj posameznih funkcionalnosti so se uporabljale ločene razvojne oziroma feature veje. Tipičen potek dela je bil:
+
+```text
+feature branch -> commit -> push -> pull request / merge -> master
+```
+
+Primer osnovnega Git postopka:
+
+```bash
+git status
+git add .
+git commit -m "Opis spremembe"
+git push origin master
+```
+
+Za večje spremembe se je uporabljal pregled sprememb prek GitHub commitov in primerjava datotek. Pri razvoju smo pazili, da občutljive datoteke, kot so `.env`, lokalni build outputi in `node_modules`, niso vključene v repozitorij.
+
+---
+
+## CI/CD
+
+Za projekt je bil pripravljen osnovni CI/CD postopek za backend aplikacijo.
+
+CI/CD tok:
+
+```text
+GitHub push
+   ↓
+GitHub Actions
+   ↓
+Docker build backend slike
+   ↓
+Push slike na Docker Hub
+   ↓
+Webhook zahteva na Azure VM
+   ↓
+Deploy skripta na strežniku
+   ↓
+Posodobitev backend containerja
+```
+
+Backend Docker image se objavi v Docker Hub repozitorij:
+
+```text
+filipsuvajac/flysight-backend
+```
+
+Uporabljena sta dva taga:
+
+```text
+latest
+<git-commit-sha>
+```
+
+Tag `latest` se uporablja za deployment na Azure VM, commit SHA tag pa omogoča sledljivost posamezne verzije.
+
+Workflow datoteka se nahaja v:
+
+```text
+.github/workflows/deploy-backend.yml
+```
+
+Workflow se sproži ob pushu na vejo `master` ali ročno prek `workflow_dispatch`.
+
+Za občutljive podatke se uporabljajo GitHub Secrets:
+
+```text
+DOCKERHUB_USERNAME
+DOCKERHUB_TOKEN
+WEBHOOK_SECRET
+WEBHOOK_URL
+```
+
+Na Azure VM teče Python webhook server, ki sprejme deploy zahtevo, preveri HMAC SHA-256 podpis in nato zažene deploy skripto. S tem webhook ni odprt za nepodpisane zahteve.
+
+Glavne datoteke za CI/CD:
+
+```text
+.github/workflows/deploy-backend.yml
+scripts/webhook-server.py
+scripts/deploy-backend.sh
+docker-compose.prod.yml
+```
+
+---
+
+## Deployment
+
+Aplikacija je pripravljena za zagon v Docker okolju. Lokalno se uporablja:
+
+```bash
+docker compose up --build
+```
+
+Na Azure VM je aplikacija nameščena v Docker containerjih:
+
+```text
+flysight-postgres
+flysight-backend
+flysight-frontend
+flysight-proxy
+```
+
+Javni dostop do aplikacije poteka prek Nginx reverse proxyja na portu `80`.
+
+```text
+http://68.210.204.107
+```
+
+Backend health endpoint:
+
+```text
+http://68.210.204.107/health
+```
+
+Na strežniku je mogoče stanje preveriti z:
+
+```bash
+docker ps
+curl http://localhost/health
+```
+
+Za webhook service:
+
+```bash
+sudo systemctl status flysight-webhook --no-pager
+journalctl -u flysight-webhook -n 120 --no-pager
+```
+
+Podrobnejša dokumentacija Azure namestitve, Docker konfiguracije, webhooka in CI/CD postopka je v mapi `docs/`.
+
+---
+
+## Dokumentacija
+
+Dodatna dokumentacija se nahaja v mapi:
+
+```text
+docs/
+```
+
+Priporočena struktura dokumentacije:
+
+```text
+docs/
+├── sistemska-administracija/
+│   ├── azure.md
+│   ├── cicd.md
+│   └── slike/
+├── cityinfra/
+├── porocila/
+└── primeri/
+```
+
+V glavni README so vključeni samo ključni podatki za razumevanje in zagon projekta, daljša poročila in zaslonske slike pa so shranjene v dokumentacijskih datotekah.
+
+
+## Status projekta
+
+Projekt vključuje implementirane glavne dele sistema:
+
+* spletni frontend,
+* backend REST API,
+* PostgreSQL podatkovni model,
+* Docker okolje,
+* namizno aplikacijo,
+* eBird integracijo,
+* uvoz in obdelavo podatkov,
+* osebna opažanja uporabnikov,
+* priljubljene ptice,
+* administratorske funkcionalnosti,
+* CityInfra DSL modul.
+
+Določeni deli projekta so lahko prototipni oziroma namenjeni demonstraciji v okviru študentskega projekta.
+
+---
+
+## Ekipa
+
+- Filip Suvajac
+- Niko Ogrizek
+- Enej Kacijan
+
+---
 
 ## Koristni ukazi
 
 ```bash
-# Celoten sistem z Dockerjem
+# Celoten sistem
 docker compose up --build
 
-# Backend
+# Ustavitev sistema
+docker compose down
+
+# Ustavitev sistema in brisanje podatkovne baze
+docker compose down -v
+
+# Backend razvoj
 cd backend
 npm install
 npm run dev
+
+# Backend preverjanje
 npm run typecheck
 npm run build
 
-# Frontend
+# Frontend razvoj
 cd frontend
 npm install
 npm run dev
+
+# Frontend preverjanje
 npm run typecheck
 npm run build
 
@@ -327,3 +697,9 @@ npm run build
 # CityInfra demo
 ./gradlew :composeApp:cityInfraDemo
 ```
+
+---
+
+## Opomba
+
+Ta projekt je nastal kot študentski projektni prototip. Namenjen je prikazu povezovanja podatkovnih virov, spletne vizualizacije, backend storitev, podatkovne baze, namiznega vmesnika in dodatnega DSL modula v enoten sistem.
