@@ -26,11 +26,7 @@ Ta del loči navadno uporabo aplikacije od administratorskih funkcij. Navaden up
 
 ### Način implementacije in uporabe
 
-Tabela `users` vsebuje polje `role`. Backend ima pripravljene administratorske račune za razvoj:
-
-- `filip@flysight.test`,
-- `niko@flysight.test`,
-- `enej@flysight.test`.
+Tabela `users` vsebuje polje `role`. Backend ima pripravljene administratorske račune za razvoj.
 
 Frontend z `isAdminUser` določi, katere strani se uporabniku prikažejo. Navadni uporabnik vidi osnovne strani, administrator pa dodatno vidi `Analytics`, `Data`, `Admin` in `CityInfra`.
 
