@@ -33,7 +33,7 @@ app.use(cors({
       callback(null, true);
       return;
     }
-    callback(new Error("Not allowed by CORS."));
+    callback(new Error("Action is not allowed by CORS."));
   }
 }));
 app.use(rateLimit({
